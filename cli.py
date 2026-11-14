@@ -1,4 +1,4 @@
-"""Command-line entry point: python cli.py {ingest,margins,moves,alerts,calibrate}.
+"""Command-line entry point: python cli.py <command>; see `python cli.py --help`.
 
 Historical replay prototype: every command works on stored historical odds, nothing live.
 """
@@ -10,7 +10,9 @@ from pathlib import Path
 import pandas as pd
 
 import calibration
+import clv
 import db
+import liability
 import queries
 import report
 from detector import DEVIG, detect
@@ -50,6 +52,33 @@ def cmd_alerts(args: argparse.Namespace) -> None:
     print(f"\ntop {args.top} by edge:")
     shown = alerts.head(args.top).drop(columns=["match_id"])
     print(shown.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+
+def cmd_clv(args: argparse.Namespace) -> None:
+    odds = queries.odds_with_matches(db.connect(args.db))
+    alerts = detect(odds, threshold=args.threshold, method=args.method)
+    summary, _ = clv.performance(odds, alerts, args.method)
+    checked, confirmed = clv.exchange_check(odds, alerts, args.threshold, args.method)
+    print("Closing line value and flat 1-unit backtest of value alerts (real results)")
+    print("roi range: 95% bootstrap, resampling whole matches")
+    print(summary.to_string(index=False, float_format=lambda x: f"{x:+.4f}"))
+    print(
+        f"\nsecond opinion: {confirmed} of {checked} Pinnacle-graded alerts also clear the "
+        "threshold against Betfair Exchange"
+    )
+
+
+def cmd_exposure(args: argparse.Namespace) -> None:
+    odds = queries.odds_with_matches(db.connect(args.db))
+    sim = liability.simulate(odds, book=args.book, limit=args.limit, threshold=args.threshold,
+                             method=args.method, seed=args.seed)  # fmt: skip
+    print(f"SIMULATED bets at {args.book}'s real closing prices (stakes are made up)")
+    print(liability.summarise(sim).to_string(index=False, float_format=lambda x: f"{x:,.0f}"))
+    cols = ["match_date", "home", "away", "sharp_on", "stake_h", "stake_d", "stake_a",
+            "worst_case", "result", "actual_pnl"]  # fmt: skip
+    print(f"\n{args.top} largest worst-case losses:")
+    worst = sim.nsmallest(args.top, "worst_case")[cols]
+    print(worst.to_string(index=False, float_format=lambda x: f"{x:,.0f}"))
 
 
 def cmd_calibrate(args: argparse.Namespace) -> None:
@@ -95,6 +124,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("reports/alerts.csv"))
     p.add_argument("--top", type=int, default=15, help="how many alerts to print")
     p.set_defaults(func=cmd_alerts)
+
+    p = sub.add_parser("clv", help="closing line value and backtest of value alerts")
+    p.add_argument("--threshold", type=float, default=0.03, help="min edge, 0.03 = 3%%")
+    p.add_argument("--method", choices=sorted(DEVIG), default="power")
+    p.set_defaults(func=cmd_clv)
+
+    p = sub.add_parser("exposure", help="SIMULATED bookmaker liability per match")
+    p.add_argument("--book", default=liability.DEFAULTS["book"], help="whose prices are 'ours'")
+    p.add_argument("--limit", type=float, default=liability.DEFAULTS["limit"])
+    p.add_argument("--threshold", type=float, default=0.03, help="sharp bettors' min edge")
+    p.add_argument("--method", choices=sorted(DEVIG), default="power")
+    p.add_argument("--seed", type=int, default=liability.DEFAULTS["seed"])
+    p.add_argument("--top", type=int, default=10)
+    p.set_defaults(func=cmd_exposure)
 
     p = sub.add_parser("calibrate", help="Brier/log loss, reliability table and plot")
     p.add_argument("--out-dir", type=Path, default=Path("reports"))

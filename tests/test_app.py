@@ -30,8 +30,13 @@ def test_dashboard_renders(raw_dir, tmp_path, monkeypatch):
     ]
     assert at.metric[0].value == "3"
 
-    at.slider[0].set_value(10.0).run()  # raise the alert threshold
+    at.slider(key="threshold").set_value(10.0).run()  # raise the alert threshold
     assert not at.exception
+
+    at.segmented_control(key="lang").set_value("zh").run()  # switch to Chinese
+    assert not at.exception
+    assert [m.label for m in at.metric] == ["比赛", "博彩公司", "价值提醒", "套利提醒"]
+    assert at.metric[0].value == "3"  # numbers do not change with the language
 
 
 def test_dashboard_without_database(tmp_path, monkeypatch):
