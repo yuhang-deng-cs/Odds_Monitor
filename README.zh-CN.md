@@ -8,7 +8,7 @@
 > ⚠️ **原型：仅做历史回放。** 分析的是 football-data.co.uk 公布的历史赔率，没有接入任何实时数据，
 > 不下注，也不做真实交易。这是一个学习和面试项目。
 
-![HTML 报告预览](docs/report_preview.png)
+![HTML 报告预览](docs/report_preview_zh.png)
 
 ## 功能
 | 问题 | 解决方法 |
