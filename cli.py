@@ -12,6 +12,7 @@ import pandas as pd
 import calibration
 import db
 import queries
+import report
 from detector import DEVIG, detect
 from load import load_dir
 
@@ -63,6 +64,13 @@ def cmd_calibrate(args: argparse.Namespace) -> None:
     )
 
 
+def cmd_report(args: argparse.Namespace) -> None:
+    out = report.write_report(
+        db.connect(args.db), args.out, threshold=args.threshold, method=args.method
+    )
+    print(f"report written to {out.resolve()} (open it in any browser)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Odds monitor (historical replay prototype)")
     parser.add_argument("--db", type=Path, default=db.DEFAULT_DB, help="DuckDB file")
@@ -91,6 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("calibrate", help="Brier/log loss, reliability table and plot")
     p.add_argument("--out-dir", type=Path, default=Path("reports"))
     p.set_defaults(func=cmd_calibrate)
+
+    p = sub.add_parser("report", help="one-page HTML report for non-technical readers")
+    p.add_argument("--threshold", type=float, default=0.03, help="min edge, 0.03 = 3%%")
+    p.add_argument("--method", choices=sorted(DEVIG), default="power")
+    p.add_argument("--out", type=Path, default=Path("reports/report.html"))
+    p.set_defaults(func=cmd_report)
     return parser
 
 

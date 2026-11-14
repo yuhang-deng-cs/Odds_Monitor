@@ -51,7 +51,8 @@ with_prev AS (
     FROM by_outcome
     WINDOW w AS (PARTITION BY match_id, bookmaker, outcome ORDER BY snap_order)
 )
-SELECT m.match_date,
+SELECT m.season,
+       m.match_date,
        m.home,
        m.away,
        p.bookmaker,

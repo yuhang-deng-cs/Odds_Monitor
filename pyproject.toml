@@ -17,3 +17,4 @@ pythonpath = ["."]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/conftest.py" = ["E501"]  # literal CSV fixture rows are long
+"report.py" = ["E501"]  # HTML template lines are long

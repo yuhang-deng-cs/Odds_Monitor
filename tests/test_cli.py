@@ -20,3 +20,14 @@ def test_all_commands_run_end_to_end(raw_dir, tmp_path, capsys):
     assert "Pinnacle" in out and "alerts (threshold 3.0%" in out and "base rates" in out
     assert (tmp_path / "alerts.csv").exists()
     assert (tmp_path / "reports" / "calibration.png").exists()
+
+
+def test_report_command_writes_html(raw_dir, tmp_path, capsys):
+    db_args = ["--db", str(tmp_path / "cli.duckdb")]
+    _run(*db_args, "ingest", "--raw-dir", str(raw_dir))
+    out = tmp_path / "report.html"
+    _run(*db_args, "report", "--out", str(out))
+    page = out.read_text(encoding="utf-8")
+    assert "Historical replay" in page
+    assert "Which bookmakers charge the most?" in page
+    assert page.count("data:image/png;base64,") == 3  # margins, alerts, calibration

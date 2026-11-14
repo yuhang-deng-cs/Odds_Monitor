@@ -102,6 +102,14 @@ def reliability_table(p: pd.DataFrame, n_bins: int = 10) -> pd.DataFrame:
 
 
 def plot_reliability(tables: dict[str, pd.DataFrame], path: Path) -> None:
+    """Save the reliability diagram to a PNG file."""
+    fig = reliability_figure(tables)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def reliability_figure(tables: dict[str, pd.DataFrame]) -> plt.Figure:
     """Reliability diagram: one line per series against the perfect-calibration diagonal."""
     colors = ["#2a78d6", "#eb6834"]  # categorical slots 1-2 of the default palette
     fig, ax = plt.subplots(figsize=(6, 6), facecolor="#fcfcfb")
@@ -121,9 +129,7 @@ def plot_reliability(tables: dict[str, pd.DataFrame], path: Path) -> None:
     ax.tick_params(colors="#52514e")
     ax.legend(frameon=False, labelcolor="#52514e", loc="upper left")
     fig.tight_layout()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    return fig
 
 
 def run(odds: pd.DataFrame, out_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
