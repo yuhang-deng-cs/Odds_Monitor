@@ -52,7 +52,7 @@ def connect(path: Path = DEFAULT_DB) -> duckdb.DuckDBPyConnection:
     return con
 
 
-def _count(con: duckdb.DuckDBPyConnection, table: str) -> int:
+def count_rows(con: duckdb.DuckDBPyConnection, table: str) -> int:
     return con.execute(f"SELECT count(*) FROM {table}").fetchall()[0][0]
 
 
@@ -62,7 +62,7 @@ def ingest(con: duckdb.DuckDBPyConnection, long: pd.DataFrame) -> dict[str, int]
     ON CONFLICT DO NOTHING means the first version of a row wins. If a source file were
     corrected later, we would need DO UPDATE (or versioned rows) instead; see README.
     """
-    before = {t: _count(con, t) for t in ("matches", "odds_snapshots")}
+    before = {t: count_rows(con, t) for t in ("matches", "odds_snapshots")}
     con.register("incoming", long)
     con.execute(
         """
@@ -81,14 +81,14 @@ def ingest(con: duckdb.DuckDBPyConnection, long: pd.DataFrame) -> dict[str, int]
         """
     )
     con.unregister("incoming")
-    return {t: _count(con, t) - n for t, n in before.items()}
+    return {t: count_rows(con, t) - n for t, n in before.items()}
 
 
 def save_alerts(con: duckdb.DuckDBPyConnection, alerts: pd.DataFrame) -> int:
     """Insert alerts, skipping ones already stored (same dedupe key); return new rows."""
     if alerts.empty:
         return 0
-    before = _count(con, "alerts")
+    before = count_rows(con, "alerts")
     con.register("new_alerts", alerts)
     con.execute(
         """
@@ -99,4 +99,4 @@ def save_alerts(con: duckdb.DuckDBPyConnection, alerts: pd.DataFrame) -> int:
         """
     )
     con.unregister("new_alerts")
-    return _count(con, "alerts") - before
+    return count_rows(con, "alerts") - before
