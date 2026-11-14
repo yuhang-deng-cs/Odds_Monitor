@@ -2,6 +2,12 @@
 
 [English](README.md) | **中文**
 
+[![CI](https://github.com/yuhang-deng-cs/Odds_Monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/yuhang-deng-cs/Odds_Monitor/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue)
+![DuckDB](https://img.shields.io/badge/storage-DuckDB-yellow)
+![Streamlit](https://img.shields.io/badge/dashboard-Streamlit-red)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **基于三个赛季英超历史数据回放的赔率分析工具：博彩公司赔率对比、去水（去除利润率）、
 定价偏差提醒、收盘价值（CLV）检验、模拟庄家风险敞口，以及赔率准确度（校准）评估。**
 
@@ -9,6 +15,14 @@
 > 不下注，也不做真实交易。这是一个学习和面试项目。
 
 ![HTML 报告预览](docs/report_preview_zh.png)
+
+## 主要发现
+以下均为三个赛季的真实运行结果（细节和局限见[三个赛季的结果](#三个赛季的结果)）：
+- **利润率从 0.56% 到 6.51% 不等。** 收盘平均利润率：Betfair Exchange 0.56%、Pinnacle 2.96%、Bet365 5.51%、Ladbrokes 6.51%。
+- **大部分“价值”只是一家专业公司与市场意见不同。** 在有交易所报价的 119 条以 Pinnacle 为参考的提醒中，只有 21 条相对 Betfair Exchange 仍超过 3%。
+- **收盘赔率的提醒是亏钱的：** 每单位下注 −43%（95% 区间 −70% … −6%）。早盘提醒有 60% 优于收盘价，而普通早盘赔率只有 20%，但只有 40 注。
+- **模拟庄家**（以 Bet365 收盘赔率为我方价格）：预期利润为投注额的 5.2%（接近其 5.51% 的利润率），按真实赛果为 4.5%；1,140 场中有 75 场超过 10,000 单位的敞口限额。
+- **套利稀少且很薄：** 共 34 次，锁定回报中位数 0.39%。
 
 ## 功能
 | 问题 | 解决方法 |
@@ -36,7 +50,7 @@ python -m venv .venv
 .venv\Scripts\activate             # Windows（macOS/Linux：source .venv/bin/activate）
 pip install -r requirements-dev.txt
 
-python scripts/download_data.py    # 下载 3 个英超赛季 -> data/raw/
+python cli.py download             # 下载 3 个英超赛季 -> data/raw/
 python cli.py ingest               # 导入 data/odds.duckdb
 python cli.py report               # -> reports/report.html，用浏览器打开
 ```
@@ -48,6 +62,7 @@ python cli.py report               # -> reports/report.html，用浏览器打开
 
 ### 命令行
 ```bash
+python cli.py download                  # 下载各赛季 CSV（已存在的文件会跳过）
 python cli.py ingest                    # 校验 CSV 并导入 DuckDB（幂等：重复运行插入 0 行）
 python cli.py margins                   # 每家博彩公司的平均/中位/最小利润率，排名
 python cli.py moves --limit 20 --bookmaker Pinnacle    # 早盘 -> 收盘变动最大的赔率
@@ -61,15 +76,15 @@ python cli.py report                    # -> reports/report.html（面向非技�
 
 ### 交互看板
 ```bash
-pip install -r requirements-app.txt     # 安装 Streamlit（可选）
 streamlit run app.py                    # 打开 http://localhost:8501
 ```
-看板以只读方式读取 DuckDB 文件。在侧边栏取消勾选 Pinnacle，可以看到缺少专业参考价时提醒会怎样变化。
+在全新的克隆（或全新的云端部署）上，看板首次运行时会自己下载数据并建立数据库，所以只需要
+`streamlit run app.py`。看板以只读方式读取 DuckDB 文件。在侧边栏取消勾选 Pinnacle，可以看到缺少专业参考价时提醒会怎样变化。
 
 ## 数据
 - **来源：** [football-data.co.uk](https://football-data.co.uk/englandm.php)，英超（`E0`），
   2023/24、2024/25、2025/26 三个赛季，共 **1,140 场比赛**。数据文件不提交到仓库，用下载脚本重新生成。
-- `scripts/download_data.py` 下载 `https://football-data.co.uk/mmz4281/<season>/E0.csv`（链接格式已与网站索引页核对）。
+- `python cli.py download`（`download.py`）下载 `https://football-data.co.uk/mmz4281/<season>/E0.csv`（链接格式已与网站索引页核对）。
   已存在的文件会跳过，每次请求之间会暂停，报告 HTTP 状态码，出错时给出明确提示。
 - **博彩公司代码**依据网站的 `notes.txt`，在 `load.py` 中逐一映射。列名容易混淆：`BFD` 是 Betfair 的*平局*，
   而 `BFDH` 是 *Betfred* 的主胜；`VC`/`BV` 都是 BetVictor。`Max`/`Avg` 是市场汇总值，不是博彩公司，因此排除。
@@ -88,10 +103,11 @@ liability.py       模拟庄家账簿：每个结果的负债、最坏情况、�
 i18n.py            报告和看板共用的中英文标签
 calibration.py     Brier、对数损失、校准表和图
 report.py          独立 HTML 报告（图表以 PNG 内嵌）
-app.py             Streamlit 看板（可选）
+download.py        礼貌、幂等的下载器（保存前校验每个文件）
+app.py             Streamlit 看板（首次运行时自动建库）
 cli.py             argparse 命令行入口
-scripts/           download_data.py
-tests/             pytest 测试（50 个，使用合成数据，不联网）
+tests/             pytest 测试（54 个，使用合成数据，不联网）
+.github/workflows/ CI：在 Python 3.11 和 3.13 上运行 ruff 检查、格式检查和 pytest
 ```
 
 ## 三个赛季的结果
@@ -166,11 +182,12 @@ tests/             pytest 测试（50 个，使用合成数据，不联网）
 
 ## 测试
 ```bash
-pytest          # 50 个测试：手算例子、去水求和（含 10 匹马赛事）、导入校验、幂等导入、SQL 窗口查询、
-                # 套利/错误定价检测、CLV 和 bootstrap、负债计算、校准、CLI、看板（含语言切换）
-ruff check .
+pytest          # 54 个测试：手算例子、去水求和（含 10 匹马赛事）、导入校验、幂等导入、SQL 窗口查询、
+                # 套利/错误定价检测、CLV 和 bootstrap、负债计算、校准、下载器、CLI、看板（含语言切换和首次建库）
+ruff check . && ruff format --check .
 ```
-如果没有安装 Streamlit，看板测试会自动跳过。
+每次推送时，GitHub Actions 会自动运行同样的检查。
 
-## 致谢
-赔率和赛果数据：[football-data.co.uk](https://www.football-data.co.uk/)。请遵守其使用条款。
+## 许可与致谢
+代码：[MIT](LICENSE)。赔率和赛果数据：[football-data.co.uk](https://www.football-data.co.uk/)；本仓库不转载数据，
+使用须遵守其条款。

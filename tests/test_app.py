@@ -5,10 +5,11 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("streamlit")
-from streamlit.testing.v1 import AppTest  # noqa: E402
+from streamlit.testing.v1 import AppTest
 
-from db import connect, ingest  # noqa: E402
-from load import load_dir  # noqa: E402
+import download
+from db import connect, ingest
+from load import load_dir
 
 APP = str(Path(__file__).parents[1] / "app.py")
 
@@ -39,10 +40,24 @@ def test_dashboard_renders(raw_dir, tmp_path, monkeypatch):
     assert at.metric[0].value == "3"  # numbers do not change with the language
 
 
-def test_dashboard_without_database(tmp_path, monkeypatch):
+def test_dashboard_builds_database_on_first_run(raw_dir, tmp_path, monkeypatch):
+    """A fresh deploy has no database: the app downloads (faked here) and ingests once."""
+    monkeypatch.setattr(download, "download_season", lambda season, out_dir: False)
+    db_path = tmp_path / "fresh.duckdb"  # its raw/ folder is the raw_dir fixture
+    monkeypatch.setenv("ODDS_DB", str(db_path))
+    at = AppTest.from_file(APP, default_timeout=60).run()
+    assert not at.exception and not at.error
+    assert db_path.exists() and at.metric[0].value == "3"
+
+
+def test_dashboard_reports_failed_download(tmp_path, monkeypatch):
+    def offline(season, out_dir):
+        raise download.DownloadError("network error")
+
+    monkeypatch.setattr(download, "download_season", offline)
     monkeypatch.setenv("ODDS_DB", str(tmp_path / "missing.duckdb"))
     at = AppTest.from_file(APP, default_timeout=60).run()
-    assert "python cli.py ingest" in at.error[0].value
+    assert "network error" in at.error[0].value and "python cli.py download" in at.error[0].value
 
 
 def test_odds_calculator_handles_any_market(raw_dir, tmp_path, monkeypatch):

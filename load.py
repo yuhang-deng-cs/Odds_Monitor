@@ -145,5 +145,5 @@ def load_dir(raw_dir: Path) -> pd.DataFrame:
     """Load every E0_*.csv in a directory."""
     paths = sorted(raw_dir.glob("E0_*.csv"))
     if not paths:
-        raise FileNotFoundError(f"no E0_*.csv files in {raw_dir}; run scripts/download_data.py")
+        raise FileNotFoundError(f"no E0_*.csv files in {raw_dir}; run `python cli.py download`")
     return load_files(paths)

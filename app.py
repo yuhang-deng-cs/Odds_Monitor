@@ -16,10 +16,13 @@ import streamlit as st
 
 import calibration
 import clv
+import db
+import download
 import i18n
 import liability
 import queries
 from detector import DEVIG, detect
+from load import load_dir
 from odds import fair_price_table, overround
 from report import (
     BLUE,
@@ -38,8 +41,10 @@ RACE_EXAMPLE = "3.0 4.5 6.0 8.0 10.0 13.0 17.0 21.0 34.0 51.0"  # illustrative, 
 TEXT = {
     "replay": ("**Historical replay.** Past Premier League odds from football-data.co.uk. A prototype: nothing here is live and no bets are placed.",
                "**历史回放。**数据为 football-data.co.uk 的英超历史赔率。这是一个原型：没有实时数据，也没有真实下注。"),
-    "no_db": ("No database at {path}. Run `python cli.py ingest` first.",
-              "找不到数据库 {path}。请先运行 `python cli.py ingest`。"),
+    "no_db": ("Could not build the database at {path}: {err}. Run `python cli.py download` and `python cli.py ingest`.",
+              "无法在 {path} 建立数据库：{err}。请运行 `python cli.py download` 和 `python cli.py ingest`。"),
+    "first_run": ("First run: downloading three Premier League seasons and building the database (about 10 seconds)…",
+                  "首次运行：正在下载三个英超赛季并建立数据库（约 10 秒）……"),
     "filters": ("Filters", "筛选"), "seasons": ("Seasons", "赛季"), "bookmakers": ("Bookmakers", "博彩公司"),
     "pinnacle_tip": ("Removing Pinnacle shows what happens when the sharp reference is missing.",
                      "去掉 Pinnacle 可以看到缺少专业参考价时会发生什么。"),
@@ -109,6 +114,25 @@ TEXT = {
 st.set_page_config(page_title="Odds Monitor", page_icon=":material/monitoring:", layout="wide")
 
 
+@st.cache_resource(show_spinner=False)
+def build_database(db_path: str) -> None:
+    """First run (e.g. a fresh cloud deploy): download the CSVs and ingest them once.
+
+    Builds into a temporary file and renames it, so no session ever reads a half-built database.
+    """
+    target = Path(db_path)
+    raw_dir = target.parent / "raw"
+    download.download(download.DEFAULT_SEASONS, raw_dir)
+    partial = target.with_suffix(".building")
+    partial.unlink(missing_ok=True)
+    con = db.connect(partial)
+    try:
+        db.ingest(con, load_dir(raw_dir))
+    finally:
+        con.close()
+    partial.replace(target)
+
+
 @st.cache_data
 def load_data(db_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read odds and all open->close moves once; filtering happens in memory."""
@@ -163,7 +187,7 @@ def margins_table(odds: pd.DataFrame, snapshot: str) -> pd.DataFrame:
             avg_margin_pct=("margin", "mean"),
             median_margin_pct=("margin", "median"),
             n_matches=("margin", "size"),
-        )  # fmt: skip
+        )
         .round(2)
         .reset_index()
         .sort_values("avg_margin_pct")
@@ -209,8 +233,12 @@ head_l.title("Odds Monitor")
 st.info(tx("replay"), icon=":material/history:")
 
 if not DB_PATH.exists():
-    st.error(tx("no_db", path=DB_PATH))
-    st.stop()
+    try:
+        with st.spinner(tx("first_run")):
+            build_database(str(DB_PATH))
+    except (download.DownloadError, OSError) as exc:
+        st.error(tx("no_db", path=DB_PATH, err=exc))
+        st.stop()
 
 odds_all, moves_all = load_data(str(DB_PATH))
 
@@ -385,7 +413,7 @@ with tab_c:
                 "n",
                 "bin",
             ],
-        )  # fmt: skip
+        )
         .properties(height=420)
     )
     st.altair_chart(diagonal + lines, width="stretch")

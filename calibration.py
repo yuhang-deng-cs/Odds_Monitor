@@ -10,10 +10,10 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")  # write files only, no GUI window
-import matplotlib.pyplot as plt  # noqa: E402
-import pandas as pd  # noqa: E402
+import matplotlib.pyplot as plt
+import pandas as pd
 
-from detector import DEVIG, OUTCOMES, reference_probs  # noqa: E402
+from detector import DEVIG, OUTCOMES, reference_probs
 
 PROB_COLS = ["p_h", "p_d", "p_a"]
 

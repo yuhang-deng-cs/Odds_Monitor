@@ -2,6 +2,12 @@
 
 **English** | [中文](README.zh-CN.md)
 
+[![CI](https://github.com/yuhang-deng-cs/Odds_Monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/yuhang-deng-cs/Odds_Monitor/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.13-blue)
+![DuckDB](https://img.shields.io/badge/storage-DuckDB-yellow)
+![Streamlit](https://img.shields.io/badge/dashboard-Streamlit-red)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **Bookmaker odds comparison, margin removal, discrepancy alerts, closing-line-value checks,
 simulated sportsbook exposure and calibration, replayed on three seasons of historical Premier
 League data.**
@@ -11,6 +17,14 @@ League data.**
 > trading. Built as a learning and interview project.
 
 ![HTML report preview](docs/report_preview.png)
+
+## Key findings
+Real numbers from the three seasons (details and caveats in [Results](#results-on-the-three-seasons)):
+- **Margins range from 0.56% to 6.51%.** Average closing margin: Betfair Exchange 0.56%, Pinnacle 2.96%, Bet365 5.51%, Ladbrokes 6.51%.
+- **Most "value" is one sharp book disagreeing.** Of 119 Pinnacle-graded alerts with an exchange price, only 21 still cleared 3% against Betfair Exchange.
+- **Closing-odds alerts lost money:** −43% per unit staked (95% range −70% … −6%). Early alerts beat the close 60% of the time vs 20% for a typical early price, but on only 40 bets.
+- **As a simulated sportsbook** on Bet365's closing prices, expected profit was 5.2% of stakes (close to its 5.51% margin), 4.5% on the real results, and 75 of 1,140 matches breached a 10,000-unit exposure limit.
+- **Arbitrage is rare and thin:** 34 cases, median locked-in return 0.39%.
 
 ## What it does
 | Question | How it answers it |
@@ -38,7 +52,7 @@ python -m venv .venv
 .venv\Scripts\activate             # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install -r requirements-dev.txt
 
-python scripts/download_data.py    # 3 Premier League seasons -> data/raw/
+python cli.py download             # 3 Premier League seasons -> data/raw/
 python cli.py ingest               # load into data/odds.duckdb
 python cli.py report               # -> reports/report.html, open it in a browser
 ```
@@ -50,6 +64,7 @@ python cli.py report               # -> reports/report.html, open it in a browse
 
 ### CLI commands
 ```bash
+python cli.py download                  # fetch the season CSVs (skips files already there)
 python cli.py ingest                    # validate CSVs and load into DuckDB (idempotent: re-run inserts 0 rows)
 python cli.py margins                   # average / median / min margin per bookmaker, ranked
 python cli.py moves --limit 20 --bookmaker Pinnacle    # largest early -> closing moves
@@ -63,17 +78,17 @@ python cli.py report                    # -> reports/report.html (non-technical 
 
 ### Interactive dashboard
 ```bash
-pip install -r requirements-app.txt     # adds Streamlit (optional)
 streamlit run app.py                    # opens http://localhost:8501
 ```
-The dashboard reads the DuckDB file read-only. Untick Pinnacle in the sidebar to see how the
+On a fresh checkout (or a fresh cloud deploy) the dashboard downloads the data and builds the
+database itself on first run, so `streamlit run app.py` is all it needs. It reads the DuckDB file read-only. Untick Pinnacle in the sidebar to see how the
 alerts change when the sharp reference is missing.
 
 ## Data
 - **Source:** [football-data.co.uk](https://football-data.co.uk/englandm.php), Premier League (`E0`),
   seasons 2023/24, 2024/25 and 2025/26: **1,140 matches**. Data files are not committed; the
   download script recreates them.
-- `scripts/download_data.py` fetches `https://football-data.co.uk/mmz4281/<season>/E0.csv` (pattern checked
+- `python cli.py download` (`download.py`) fetches `https://football-data.co.uk/mmz4281/<season>/E0.csv` (pattern checked
   against the index page). It skips files that exist, pauses between requests, reports the HTTP status and
   fails clearly on errors.
 - **Bookmaker codes** follow the site's `notes.txt` and are mapped explicitly in `load.py`. Column names
@@ -94,10 +109,11 @@ liability.py       simulated sportsbook book: per-outcome liability, worst case,
 i18n.py            English / Chinese labels shared by report and dashboard
 calibration.py     Brier, log loss, reliability table and plot
 report.py          self-contained HTML report (charts embedded as PNG)
-app.py             Streamlit dashboard (optional)
+download.py        polite, idempotent downloader (validates each file before saving)
+app.py             Streamlit dashboard (builds the database on first run)
 cli.py             argparse entry point
-scripts/           download_data.py
-tests/             pytest suite (50 tests, synthetic data, no network)
+tests/             pytest suite (54 tests, synthetic data, no network)
+.github/workflows/ CI: ruff lint + format check and pytest on Python 3.11 and 3.13
 ```
 
 ## Results on the three seasons
@@ -182,12 +198,14 @@ From the actual run (`python cli.py ...`):
 
 ## Testing
 ```bash
-pytest          # 50 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
+pytest          # 54 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
                 # idempotent ingest, SQL window queries, arbitrage/mispricing detection, CLV and
-                # bootstrap, liability maths, calibration, CLI, dashboard (incl. language switch)
-ruff check .
+                # bootstrap, liability maths, calibration, downloader, CLI, dashboard (incl.
+                # language switch and first-run database build)
+ruff check . && ruff format --check .
 ```
-The dashboard tests are skipped automatically if Streamlit is not installed.
+The same checks run on every push via GitHub Actions.
 
-## Credits
-Odds and results data: [football-data.co.uk](https://www.football-data.co.uk/). Use it in line with their terms.
+## Licence and credits
+Code: [MIT](LICENSE). Odds and results data: [football-data.co.uk](https://www.football-data.co.uk/); it is not
+redistributed here, and its use is subject to their terms.

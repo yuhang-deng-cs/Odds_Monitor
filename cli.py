@@ -12,6 +12,7 @@ import pandas as pd
 import calibration
 import clv
 import db
+import download
 import liability
 import queries
 import report
@@ -21,6 +22,13 @@ from odds import fair_price_table, overround
 
 pd.set_option("display.width", 200)
 pd.set_option("display.max_columns", 20)
+
+
+def cmd_download(args: argparse.Namespace) -> None:
+    try:
+        download.download(args.seasons, args.raw_dir)
+    except download.DownloadError as exc:
+        raise SystemExit(f"FAIL  {exc}") from exc
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -114,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", type=Path, default=db.DEFAULT_DB, help="DuckDB file")
     parser.add_argument("-v", "--verbose", action="store_true", help="show loader logging")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("download", help="fetch Premier League CSVs into data/raw (skips existing)")
+    p.add_argument("--seasons", nargs="+", default=list(download.DEFAULT_SEASONS), help="e.g. 2425")
+    p.add_argument("--raw-dir", type=Path, default=Path("data/raw"))
+    p.set_defaults(func=cmd_download)
 
     p = sub.add_parser("ingest", help="load CSVs from data/raw into DuckDB (idempotent)")
     p.add_argument("--raw-dir", type=Path, default=Path("data/raw"))

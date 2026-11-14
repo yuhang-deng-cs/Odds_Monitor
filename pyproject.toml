@@ -1,15 +1,22 @@
 [project]
 name = "odds-monitor"
 version = "0.1.0"
-description = "Historical-replay odds monitor prototype (no real trading)"
+description = "Sports odds monitor: margins, de-vig, value/arbitrage alerts, closing line value and simulated sportsbook exposure, replayed on Premier League data"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Yuhang Deng" }]
 requires-python = ">=3.11"
+
+[project.urls]
+Repository = "https://github.com/yuhang-deng-cs/Odds_Monitor"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "SIM", "C4", "PTH", "N", "RUF"]
+ignore = ["RUF001"]  # full-width Chinese punctuation in UI strings is intentional
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
