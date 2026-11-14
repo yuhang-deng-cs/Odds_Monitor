@@ -20,6 +20,7 @@ import i18n
 import liability
 import queries
 from detector import DEVIG, detect
+from odds import fair_price_table, overround
 from report import (
     BLUE,
     friendly_alerts,
@@ -31,6 +32,7 @@ from report import (
 
 DB_PATH = Path(os.environ.get("ODDS_DB", "data/odds.duckdb"))
 ORANGE = "#eb6834"
+RACE_EXAMPLE = "3.0 4.5 6.0 8.0 10.0 13.0 17.0 21.0 34.0 51.0"  # illustrative, not real
 
 # UI text: key -> (English, Chinese)
 TEXT = {
@@ -49,8 +51,22 @@ TEXT = {
     "m_matches": ("Matches", "比赛"), "m_books": ("Bookmakers", "博彩公司"),
     "m_value": ("Value alerts", "价值提醒"), "m_arbs": ("Arbitrage alerts", "套利提醒"),
     "tab_margins": ("Bookmaker margins", "博彩公司利润率"), "tab_moves": ("Price moves", "赔率变动"),
-    "tab_alerts": ("Alerts", "提醒"), "tab_perf": ("Did alerts hold up?", "提醒是否有效"),
+    "tab_alerts": ("Alerts", "提醒"), "tab_perf": ("Alert check (CLV)", "提醒检验（CLV）"),
     "tab_exposure": ("Our exposure (simulated)", "风险敞口（模拟）"), "tab_calib": ("Are odds accurate?", "赔率准确吗"),
+    "tab_calc": ("Odds calculator (any market)", "赔率计算器（任意盘口）"),
+    "calc_h": ("Margin and fair prices for any market", "任意盘口的利润率与公平赔率"),
+    "calc_p": ("The same margin-removal code used on the football data works for any number of outcomes, so it can price a horse race as well as home/draw/away. Type decimal odds separated by spaces or commas. The pre-filled prices are an **illustrative 10-runner race, not real data**.",
+               "足球数据使用的同一套去水代码适用于任意数量的结果，所以既能处理主/平/客，也能处理一场赛马。输入用空格或逗号分隔的小数赔率。预填的赔率是一个**示例 10 匹马赛事，不是真实数据**。"),
+    "calc_input": ("Decimal odds", "小数赔率"),
+    "calc_bad": ("Enter at least two decimal odds above 1.0, e.g. 3.0 4.5 6.0", "请输入至少两个大于 1.0 的小数赔率，例如 3.0 4.5 6.0"),
+    "calc_over": ("Overround (bookmaker margin)", "超额率（博彩公司利润率）"), "calc_n": ("Outcomes", "结果数"),
+    "calc_note": ("Compare the two methods: power removes relatively more margin from the longshots at the bottom and less from the favourite at the top (the favourite–longshot bias).",
+                  "对比两种方法：power 法从底部的冷门身上去掉更多利润率，从顶部的热门身上去掉更少（即热门-冷门偏差）。"),
+    "runner": ("Runner", "编号"), "c_odds": ("Odds", "赔率"), "c_implied": ("Implied (with margin)", "隐含概率（含水）"),
+    "c_prop": ("Fair: proportional", "公平概率：比例法"), "c_power": ("Fair: power", "公平概率：power 法"),
+    "c_fair_odds": ("Fair odds (power)", "公平赔率（power）"),
+    "perf_what": ("**What is CLV?** Example: a bookmaker offered 4.40 early; at kick-off the sharp market rated the outcome a 25% chance (fair odds 4.00). CLV = 4.40 × 0.25 − 1 = **+10%**: the early price was too generous and the market corrected it. Positive CLV over many bets is the standard sign of a good bettor, and for a sportsbook, of a price that sharp customers will pick off.",
+                  "**什么是 CLV？**举例：某博彩公司早盘开出 4.40；开赛时专业市场认为该结果有 25% 的概率（公平赔率 4.00）。CLV = 4.40 × 0.25 − 1 = **+10%**：说明早盘价格给得太高，后来被市场修正了。长期正的 CLV 是判断职业玩家水平的标准指标；对博彩公司来说，则意味着这个价格会被职业玩家利用。"),
     "margins_h": ("Which bookmakers charge the most?", "哪家博彩公司抽水最多？"),
     "margins_p": ("Every bookmaker builds a profit margin into its odds. **Lower margin = better prices for customers.** Betfair Exchange is a betting exchange (prices before commission).",
                   "每家博彩公司都会在赔率中加入利润率。**利润率越低，对玩家越有利。**Betfair Exchange 是投注交易所（赔率未扣佣金）。"),
@@ -178,7 +194,7 @@ with head_r:
     )  # fmt: skip
 
 
-def T(key: str, **fmt: object) -> str:
+def tx(key: str, **fmt: object) -> str:
     """Text for the current language."""
     text = TEXT[key][0 if lang == "en" else 1]
     return text.format(**fmt) if fmt else text
@@ -190,41 +206,41 @@ def local(df: pd.DataFrame) -> pd.DataFrame:
 
 
 head_l.title("Odds Monitor")
-st.info(T("replay"), icon=":material/history:")
+st.info(tx("replay"), icon=":material/history:")
 
 if not DB_PATH.exists():
-    st.error(T("no_db", path=DB_PATH))
+    st.error(tx("no_db", path=DB_PATH))
     st.stop()
 
 odds_all, moves_all = load_data(str(DB_PATH))
 
 with st.sidebar:
-    st.header(T("filters"))
+    st.header(tx("filters"))
     seasons = sorted(odds_all["season"].unique())
     season_sel = st.multiselect(
-        T("seasons"),
+        tx("seasons"),
         seasons,
         default=seasons,
         format_func=lambda s: f"20{s[:2]}/{s[2:]}",
         key="seasons",
     )
     books = sorted(odds_all["bookmaker"].unique())
-    book_sel = st.multiselect(T("bookmakers"), books, default=books, key="books")
-    st.caption(T("pinnacle_tip"))
-    st.header(T("alert_settings"))
-    threshold = st.slider(T("min_edge"), 1.0, 10.0, 3.0, 0.5, key="threshold") / 100
+    book_sel = st.multiselect(tx("bookmakers"), books, default=books, key="books")
+    st.caption(tx("pinnacle_tip"))
+    st.header(tx("alert_settings"))
+    threshold = st.slider(tx("min_edge"), 1.0, 10.0, 3.0, 0.5, key="threshold") / 100
     method = st.radio(
-        T("method"),
+        tx("method"),
         sorted(DEVIG),
         index=sorted(DEVIG).index("power"),
-        help=T("method_help"),
+        help=tx("method_help"),
         key="method",
     )
 
 odds = odds_all[odds_all["season"].isin(season_sel) & odds_all["bookmaker"].isin(book_sel)]
 moves = moves_all[moves_all["season"].isin(season_sel) & moves_all["bookmaker"].isin(book_sel)]
 if odds.empty:
-    st.warning(T("empty"))
+    st.warning(tx("empty"))
     st.stop()
 
 alerts = run_alerts(odds, threshold, method)
@@ -232,89 +248,91 @@ value = alerts[alerts["alert_type"] == "value"]
 arbs = alerts[alerts["alert_type"] == "arbitrage"]
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric(T("m_matches"), f"{odds['match_id'].nunique():,}")
-c2.metric(T("m_books"), odds["bookmaker"].nunique())
-c3.metric(T("m_value"), f"{len(value):,}")
-c4.metric(T("m_arbs"), f"{len(arbs):,}")
+c1.metric(tx("m_matches"), f"{odds['match_id'].nunique():,}")
+c2.metric(tx("m_books"), odds["bookmaker"].nunique())
+c3.metric(tx("m_value"), f"{len(value):,}")
+c4.metric(tx("m_arbs"), f"{len(arbs):,}")
 
-tab_m, tab_mv, tab_a, tab_p, tab_x, tab_c = st.tabs(
+tab_m, tab_mv, tab_a, tab_p, tab_x, tab_c, tab_calc = st.tabs(
     [
-        T("tab_margins"),
-        T("tab_moves"),
-        T("tab_alerts"),
-        T("tab_perf"),
-        T("tab_exposure"),
-        T("tab_calib"),
+        tx("tab_margins"),
+        tx("tab_moves"),
+        tx("tab_alerts"),
+        tx("tab_perf"),
+        tx("tab_exposure"),
+        tx("tab_calib"),
+        tx("tab_calc"),
     ]
 )
 
 with tab_m:
-    st.subheader(T("margins_h"))
-    st.markdown(T("margins_p"))
+    st.subheader(tx("margins_h"))
+    st.markdown(tx("margins_p"))
     snap = st.segmented_control(
-        T("odds"), ["close", "open"], default="close", required=True, key="margin_snap",
+        tx("odds"), ["close", "open"], default="close", required=True, key="margin_snap",
         format_func=lambda s: i18n.value(s, lang),
     )  # fmt: skip
     m = margins_table(odds, snap)
     st.altair_chart(
-        bar_chart(m, "avg_margin_pct", "bookmaker", T("avg_margin"),
+        bar_chart(m, "avg_margin_pct", "bookmaker", tx("avg_margin"),
                   ["bookmaker", "avg_margin_pct", "median_margin_pct", "n_matches"]),
         width="stretch",
     )  # fmt: skip
     st.dataframe(local(m), hide_index=True, width="stretch")
 
 with tab_mv:
-    st.subheader(T("moves_h"))
-    st.markdown(T("moves_p"))
-    n = st.slider(T("how_many"), 5, 100, 20, key="n_moves")
+    st.subheader(tx("moves_h"))
+    st.markdown(tx("moves_p"))
+    n = st.slider(tx("how_many"), 5, 100, 20, key="n_moves")
     top = moves.reindex(moves["prob_move_pp"].abs().sort_values(ascending=False).index).head(n)
     st.dataframe(friendly_moves(top, lang), hide_index=True, width="stretch")
 
 with tab_a:
-    st.subheader(T("alerts_h"))
-    st.markdown(T("alerts_p", thr=f"{threshold:.1%}"))
-    st.markdown(T("book_view"))
+    st.subheader(tx("alerts_h"))
+    st.markdown(tx("alerts_p", thr=f"{threshold:.1%}"))
+    st.markdown(tx("book_view"))
     if value.empty:
-        st.write(T("no_value"))
+        st.write(tx("no_value"))
     else:
         counts = value["bookmaker"].value_counts().rename_axis("bookmaker").reset_index()
         st.altair_chart(
-            bar_chart(counts, "count", "bookmaker", T("n_alerts"),
+            bar_chart(counts, "count", "bookmaker", tx("n_alerts"),
                       ["bookmaker", "count"]).encode(y=alt.Y("bookmaker:N", sort="-x", title=None)),
             width="stretch",
         )  # fmt: skip
         st.dataframe(friendly_alerts(alerts, "value", lang), hide_index=True, width="stretch")
-    st.markdown(f"**{T('arbs')} ({len(arbs)})**")
+    st.markdown(f"**{tx('arbs')} ({len(arbs)})**")
     st.dataframe(friendly_alerts(alerts, "arbitrage", lang), hide_index=True, width="stretch")
     st.download_button(
-        T("download"), alerts.to_csv(index=False), "alerts.csv", "text/csv",
+        tx("download"), alerts.to_csv(index=False), "alerts.csv", "text/csv",
         icon=":material/download:",
     )  # fmt: skip
 
 with tab_p:
-    st.subheader(T("perf_h"))
-    st.markdown(T("perf_p"))
+    st.subheader(tx("perf_h"))
+    st.markdown(tx("perf_what"))
+    st.markdown(tx("perf_p"))
     perf, (checked, confirmed) = run_performance(odds, alerts, threshold, method)
     st.dataframe(friendly_performance(perf, lang), hide_index=True, width="stretch")
-    st.markdown(T("second", c=checked, k=confirmed))
+    st.markdown(tx("second", c=checked, k=confirmed))
 
 with tab_x:
-    st.subheader(T("exp_h"))
-    st.info(T("exp_sim"), icon=":material/science:")
-    st.markdown(T("exp_p"))
+    st.subheader(tx("exp_h"))
+    st.info(tx("exp_sim"), icon=":material/science:")
+    st.markdown(tx("exp_p"))
     sportsbooks = [b for b in sorted(odds["bookmaker"].unique()) if b != "Betfair Exchange"]
     left, right = st.columns(2)
     default_book = liability.DEFAULTS["book"]
     our_book = left.selectbox(
-        T("our_book"), sportsbooks, key="our_book",
+        tx("our_book"), sportsbooks, key="our_book",
         index=sportsbooks.index(default_book) if default_book in sportsbooks else 0,
     )  # fmt: skip
     limit = right.number_input(
-        T("limit"), 1_000, 50_000, int(liability.DEFAULTS["limit"]), 1_000, key="limit"
+        tx("limit"), 1_000, 50_000, int(liability.DEFAULTS["limit"]), 1_000, key="limit"
     )
     sim = run_exposure(odds, our_book, float(limit), threshold, method)
     if sim.empty:
-        st.write(T("empty"))
+        st.write(tx("empty"))
     else:
         summary = liability.summarise(sim)
         st.dataframe(friendly_exposure_summary(summary, lang), hide_index=True, width="stretch")
@@ -322,16 +340,16 @@ with tab_x:
             alt.Chart(sim)
             .mark_bar(color=BLUE)
             .encode(
-                x=alt.X("worst_case:Q", bin=alt.Bin(maxbins=40), title=T("worst_axis")),
-                y=alt.Y("count():Q", title=T("n_matches")),
-                tooltip=[alt.Tooltip("count():Q", title=T("n_matches"))],
+                x=alt.X("worst_case:Q", bin=alt.Bin(maxbins=40), title=tx("worst_axis")),
+                y=alt.Y("count():Q", title=tx("n_matches")),
+                tooltip=[alt.Tooltip("count():Q", title=tx("n_matches"))],
             )
         )
         rule = alt.Chart(pd.DataFrame({"x": [-float(limit)]})).mark_rule(
             color=ORANGE, strokeWidth=2, strokeDash=[4, 4]
         ).encode(x="x:Q")  # fmt: skip
         st.altair_chart(hist + rule, width="stretch")
-        st.markdown(f"**{T('worst10')}**")
+        st.markdown(f"**{tx('worst10')}**")
         st.dataframe(
             friendly_exposure(sim.nsmallest(10, "worst_case"), lang),
             hide_index=True,
@@ -339,8 +357,8 @@ with tab_x:
         )
 
 with tab_c:
-    st.subheader(T("calib_h"))
-    st.markdown(T("calib_p"))
+    st.subheader(tx("calib_h"))
+    st.markdown(tx("calib_p"))
     summary, rel = run_calibration(odds)
     rel = rel.rename(columns={"mean_predicted": "predicted", "observed_freq": "observed"})
     diagonal = (
@@ -352,8 +370,8 @@ with tab_c:
         alt.Chart(rel)
         .mark_line(point=alt.OverlayMarkDef(size=70), strokeWidth=2)
         .encode(
-            x=alt.X("predicted:Q", title=T("predicted"), scale=alt.Scale(domain=[0, 1])),
-            y=alt.Y("observed:Q", title=T("observed"), scale=alt.Scale(domain=[0, 1])),
+            x=alt.X("predicted:Q", title=tx("predicted"), scale=alt.Scale(domain=[0, 1])),
+            y=alt.Y("observed:Q", title=tx("observed"), scale=alt.Scale(domain=[0, 1])),
             color=alt.Color(
                 "series:N",
                 title=None,
@@ -371,10 +389,42 @@ with tab_c:
         .properties(height=420)
     )
     st.altair_chart(diagonal + lines, width="stretch")
-    st.markdown(T("scores"))
+    st.markdown(tx("scores"))
     st.dataframe(
         local(summary.round(5).rename(columns={"brier": "Brier score", "log_loss": "Log loss"})),
         hide_index=True, width="stretch",
     )  # fmt: skip
 
-st.caption(", ".join(f"{k} = {i18n.value(k, lang)}" for k in ("H", "D", "A")) + ". " + T("footer"))
+with tab_calc:
+    st.subheader(tx("calc_h"))
+    st.markdown(tx("calc_p"))
+    raw = st.text_input(tx("calc_input"), RACE_EXAMPLE, key="calc_odds")
+    try:
+        prices = [float(x) for x in raw.replace(",", " ").split()]
+        rows = fair_price_table(prices) if len(prices) >= 2 else []
+    except ValueError:  # not a number, or odds <= 1
+        rows = []
+    if not rows:
+        st.warning(tx("calc_bad"))
+    else:
+        k1, k2 = st.columns(2)
+        k1.metric(tx("calc_n"), len(rows))
+        k2.metric(tx("calc_over"), f"{overround(prices):.2%}")
+        table = pd.DataFrame(rows)
+        table.insert(0, "runner", range(1, len(rows) + 1))
+        st.dataframe(
+            table,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "runner": st.column_config.NumberColumn(tx("runner")),
+                "odds": st.column_config.NumberColumn(tx("c_odds"), format="%.2f"),
+                "implied": st.column_config.NumberColumn(tx("c_implied"), format="percent"),
+                "proportional": st.column_config.NumberColumn(tx("c_prop"), format="percent"),
+                "power": st.column_config.NumberColumn(tx("c_power"), format="percent"),
+                "fair_odds": st.column_config.NumberColumn(tx("c_fair_odds"), format="%.2f"),
+            },
+        )
+        st.caption(tx("calc_note"))
+
+st.caption(", ".join(f"{k} = {i18n.value(k, lang)}" for k in ("H", "D", "A")) + ". " + tx("footer"))

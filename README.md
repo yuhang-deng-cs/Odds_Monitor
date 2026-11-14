@@ -25,7 +25,7 @@ League data.**
 There are three ways to look at the results:
 1. **CLI:** commands that print tables (for analysts).
 2. **HTML report:** one self-contained page with charts and plain-language explanations. It opens in any browser and can be emailed (for non-technical readers).
-3. **Streamlit dashboard:** an interactive version with season/bookmaker filters, an alert-threshold slider, an exposure-limit input and hover tooltips.
+3. **Streamlit dashboard:** an interactive version with season/bookmaker filters, an alert-threshold slider, an exposure-limit input, hover tooltips and an odds calculator for any market size (e.g. a horse race).
 
 Both the report and the dashboard have an **English / 中文 language switch** (English by default).
 
@@ -54,6 +54,7 @@ python cli.py moves --limit 20 --bookmaker Pinnacle    # largest early -> closin
 python cli.py alerts --threshold 0.03 --method power   # -> reports/alerts.csv + DuckDB alerts table
 python cli.py clv                       # closing line value + backtest of the value alerts
 python cli.py exposure --book Bet365 --limit 10000     # SIMULATED liability per match
+python cli.py devig 3.0 4.5 6.0 8.0 10.0 13.0          # margin + fair prices for ANY market (e.g. a race)
 python cli.py calibrate                 # -> reports/calibration.png, calibration_summary.csv, reliability.csv
 python cli.py report                    # -> reports/report.html (non-technical summary)
 ```
@@ -94,7 +95,7 @@ report.py          self-contained HTML report (charts embedded as PNG)
 app.py             Streamlit dashboard (optional)
 cli.py             argparse entry point
 scripts/           download_data.py
-tests/             pytest suite (48 tests, synthetic data, no network)
+tests/             pytest suite (50 tests, synthetic data, no network)
 ```
 
 ## Results on the three seasons
@@ -149,7 +150,8 @@ From the actual run (`python cli.py ...`):
 - **CLV before P&L.** Realised profit on a few hundred bets is mostly noise; closing line value is the
   standard faster signal of whether a price was right. Both are reported, with honest intervals.
 - **Not tied to football.** The de-vig and margin functions take any number of outcomes, so the same code
-  prices a 10-runner horse race (see `tests/test_odds.py`). Racing would add place markets, scratchings
+  prices a 10-runner horse race: try `python cli.py devig ...` or the dashboard's *Odds calculator* tab
+  (pre-filled with an illustrative race, not real data; tested in `tests/test_odds.py`). Racing would add place markets, scratchings
   (Rule 4 deductions) and each-way terms on top.
 
 ## Known limitations
@@ -178,7 +180,7 @@ From the actual run (`python cli.py ...`):
 
 ## Testing
 ```bash
-pytest          # 48 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
+pytest          # 50 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
                 # idempotent ingest, SQL window queries, arbitrage/mispricing detection, CLV and
                 # bootstrap, liability maths, calibration, CLI, dashboard (incl. language switch)
 ruff check .

@@ -17,6 +17,7 @@ import queries
 import report
 from detector import DEVIG, detect
 from load import load_dir
+from odds import fair_price_table, overround
 
 pd.set_option("display.width", 200)
 pd.set_option("display.max_columns", 20)
@@ -81,6 +82,14 @@ def cmd_exposure(args: argparse.Namespace) -> None:
     print(worst.to_string(index=False, float_format=lambda x: f"{x:,.0f}"))
 
 
+def cmd_devig(args: argparse.Namespace) -> None:
+    """Margin and fair prices for any market typed on the command line (e.g. a horse race)."""
+    table = pd.DataFrame(fair_price_table(args.odds))
+    table.index = range(1, len(table) + 1)
+    print(f"{len(table)} outcomes, overround {overround(args.odds):.2%}")
+    print(table.to_string(float_format=lambda x: f"{x:.4f}"))
+
+
 def cmd_calibrate(args: argparse.Namespace) -> None:
     odds = queries.odds_with_matches(db.connect(args.db))
     summary, reliability = calibration.run(odds, args.out_dir)
@@ -138,6 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=liability.DEFAULTS["seed"])
     p.add_argument("--top", type=int, default=10)
     p.set_defaults(func=cmd_exposure)
+
+    p = sub.add_parser("devig", help="margin + fair prices for any market, e.g. a horse race")
+    p.add_argument("odds", type=float, nargs="+", help="decimal odds, e.g. 3.0 4.5 6.0 8.0")
+    p.set_defaults(func=cmd_devig)
 
     p = sub.add_parser("calibrate", help="Brier/log loss, reliability table and plot")
     p.add_argument("--out-dir", type=Path, default=Path("reports"))

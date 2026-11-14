@@ -1,6 +1,6 @@
 import pytest
 
-from odds import devig_power, devig_proportional, implied_prob, overround
+from odds import devig_power, devig_proportional, fair_price_table, implied_prob, overround
 
 
 def test_worked_example_two_way():
@@ -50,3 +50,12 @@ def test_devig_works_for_a_many_runner_race():
     # Power de-vig takes relatively more margin off the longshot than off the favourite.
     prop, power = devig_proportional(race), devig_power(race)
     assert power[0] > prop[0] and power[-1] < prop[-1]
+
+
+def test_fair_price_table_rows():
+    rows = fair_price_table([2.0, 1.8])
+    assert [r["odds"] for r in rows] == [2.0, 1.8]
+    assert rows[0]["implied"] == pytest.approx(0.5)
+    assert rows[0]["proportional"] == pytest.approx(0.4737, abs=1e-4)
+    assert sum(r["power"] for r in rows) == pytest.approx(1.0)
+    assert rows[0]["fair_odds"] == pytest.approx(1 / rows[0]["power"])

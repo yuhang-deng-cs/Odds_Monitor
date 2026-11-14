@@ -18,10 +18,12 @@ def test_all_commands_run_end_to_end(raw_dir, tmp_path, capsys):
     _run(*db_args, "calibrate", "--out-dir", str(tmp_path / "reports"))
     _run(*db_args, "clv")
     _run(*db_args, "exposure", "--book", "Bet365")
+    _run("devig", "2.0", "1.8")
     out = capsys.readouterr().out
     assert "Pinnacle" in out and "alerts (threshold 3.0%" in out and "base rates" in out
     assert "all early prices (baseline)" in out and "second opinion" in out
     assert "SIMULATED bets at Bet365" in out
+    assert "2 outcomes, overround 5.56%" in out
     assert (tmp_path / "alerts.csv").exists()
     assert (tmp_path / "reports" / "calibration.png").exists()
 

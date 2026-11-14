@@ -67,3 +67,17 @@ def devig_power(odds: Sequence[float], tol: float = 1e-12, max_iter: int = 200) 
     probs = [q**k for q in raw]
     total = sum(probs)  # ~1 already; renormalise away the last bit of bisection error
     return [p / total for p in probs]
+
+
+def fair_price_table(odds: Sequence[float]) -> list[dict[str, float]]:
+    """One row per outcome for ANY market size (3-way football, a 12-runner race, ...).
+
+    Columns: odds, implied (raw 1/odds, margin included), proportional and power fair
+    probabilities, and the power fair odds (1 / fair probability).
+    """
+    implied = [implied_prob(o) for o in odds]
+    prop, power = devig_proportional(odds), devig_power(odds)
+    return [
+        {"odds": o, "implied": q, "proportional": pp, "power": pw, "fair_odds": 1 / pw}
+        for o, q, pp, pw in zip(odds, implied, prop, power, strict=True)
+    ]
