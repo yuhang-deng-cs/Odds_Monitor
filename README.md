@@ -1,5 +1,7 @@
 # Odds Monitor
 
+**English** | [中文](README.zh-CN.md)
+
 **Bookmaker odds comparison, margin removal, discrepancy alerts, closing-line-value checks,
 simulated sportsbook exposure and calibration, replayed on three seasons of historical Premier
 League data.**
@@ -151,8 +153,8 @@ From the actual run (`python cli.py ...`):
   standard faster signal of whether a price was right. Both are reported, with honest intervals.
 - **Not tied to football.** The de-vig and margin functions take any number of outcomes, so the same code
   prices a 10-runner horse race: try `python cli.py devig ...` or the dashboard's *Odds calculator* tab
-  (pre-filled with an illustrative race, not real data; tested in `tests/test_odds.py`). Racing would add place markets, scratchings
-  (Rule 4 deductions) and each-way terms on top.
+  (pre-filled with an illustrative race, not real data; tested in `tests/test_odds.py`).
+  Racing would add place markets, scratchings (Rule 4 deductions) and each-way terms on top.
 
 ## Known limitations
 - **Two snapshots per match only.** "Moves" is a rough proxy for steam, not tick data.
