@@ -37,3 +37,16 @@ def test_power_handles_negative_overround():
     probs = devig_power([2.20, 2.10])
     assert sum(probs) == pytest.approx(1.0, abs=1e-9)
     assert probs[1] > probs[0]
+
+
+def test_devig_works_for_a_many_runner_race():
+    # Synthetic 10-runner horse race (not real data): the maths is not tied to H/D/A.
+    race = [3.0, 4.5, 6.0, 8.0, 10.0, 13.0, 17.0, 21.0, 34.0, 51.0]
+    assert overround(race) > 0.15  # racing books carry far bigger margins than football
+    for devig in (devig_proportional, devig_power):
+        p = devig(race)
+        assert len(p) == 10 and sum(p) == pytest.approx(1.0)
+        assert p == sorted(p, reverse=True)  # shorter price -> higher chance
+    # Power de-vig takes relatively more margin off the longshot than off the favourite.
+    prop, power = devig_proportional(race), devig_power(race)
+    assert power[0] > prop[0] and power[-1] < prop[-1]
