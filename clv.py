@@ -1,0 +1,132 @@
+"""Did the alerts hold up? Closing Line Value (CLV) and a flat-stake backtest.
+
+CLV is the industry's standard check on a price or a bet: compare the odds you took (or
+offered) early with the fair probability at the CLOSE, when the market has the most
+information. If early odds o beat the closing fair probability p_close, i.e.
+clv = o * p_close - 1 > 0, the price was "too generous" and the market later moved against it.
+
+From a sportsbook's side the same number reads the other way round: an early price of ours
+with positive CLV is a price the sharp money would have taken off us.
+
+Historical replay only: results and prices are real, no bets were placed.
+"""
+
+import numpy as np
+import pandas as pd
+
+from detector import DEVIG, EXCHANGES, OUTCOMES, reference_probs
+
+BOOTSTRAP_SAMPLES = 2000
+
+
+def closing_fair(odds: pd.DataFrame, method: str = "power") -> pd.DataFrame:
+    """Fair H/D/A probabilities per match from the CLOSING snapshot's sharp reference."""
+    rows = []
+    close = odds[odds["snapshot"] == "close"]
+    for match_id, g in close.groupby("match_id", sort=True):
+        prices = {r.bookmaker: (r.odds_h, r.odds_d, r.odds_a) for r in g.itertuples(index=False)}
+        probs, ref = reference_probs(prices, method)
+        rows.append(
+            {
+                "match_id": match_id,
+                "close_reference": ref,
+                **dict(zip(OUTCOMES, probs, strict=True)),
+            }
+        )
+    return pd.DataFrame(rows, columns=["match_id", "close_reference", *OUTCOMES])
+
+
+def _add_clv_and_pnl(bets: pd.DataFrame, fair: pd.DataFrame, results: pd.Series) -> pd.DataFrame:
+    """bets needs match_id, outcome, odds. Adds close_fair_prob, clv, won and pnl (1-unit stake)."""
+    long_fair = fair.melt(id_vars="match_id", value_vars=list(OUTCOMES), var_name="outcome",
+                          value_name="close_fair_prob")  # fmt: skip
+    out = bets.merge(long_fair, on=["match_id", "outcome"], how="left")
+    out["clv"] = out["odds"] * out["close_fair_prob"] - 1
+    out["won"] = out["match_id"].map(results) == out["outcome"]
+    out["pnl"] = np.where(out["won"], out["odds"] - 1, -1.0)
+    return out
+
+
+def bootstrap_roi_ci(bets: pd.DataFrame, seed: int = 0) -> tuple[float, float]:
+    """95% percentile bootstrap interval of ROI, resampling whole MATCHES with replacement.
+
+    Bets on the same match are not independent (one odd price can trigger alerts at several
+    books for the same outcome), so resampling single bets would give a too-narrow interval.
+    ROI of a resample = total pnl / total bets of the matches drawn.
+    """
+    per_match = bets.groupby("match_id")["pnl"].agg(["sum", "size"]).to_numpy()
+    if len(per_match) < 2:
+        return float("nan"), float("nan")
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(per_match), size=(BOOTSTRAP_SAMPLES, len(per_match)))
+    rois = per_match[idx, 0].sum(axis=1) / per_match[idx, 1].sum(axis=1)
+    return float(np.percentile(rois, 2.5)), float(np.percentile(rois, 97.5))
+
+
+def performance(
+    odds: pd.DataFrame, alerts: pd.DataFrame, method: str = "power"
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return (summary, per-bet detail).
+
+    Groups compared:
+    - early value alerts: the detector's flags on early odds -> CLV is measurable;
+    - closing value alerts: flagged at the close -> no later price, so CLV is not defined;
+    - baseline: EVERY early sportsbook price (all books, all outcomes). Its CLV should sit
+      near minus the margin; alerts are only useful if they clearly beat it.
+    roi is the realised profit per unit staked with a flat 1-unit stake on the real results.
+    """
+    fair = closing_fair(odds, method)
+    results = odds.drop_duplicates("match_id").set_index("match_id")["result"]
+
+    value = alerts[alerts["alert_type"] == "value"]
+    early = odds[(odds["snapshot"] == "open") & ~odds["bookmaker"].isin(EXCHANGES)]
+    baseline = early.melt(
+        id_vars=["match_id", "bookmaker"], value_vars=["odds_h", "odds_d", "odds_a"],
+        var_name="outcome", value_name="odds",
+    ).assign(outcome=lambda d: d["outcome"].str[-1].str.upper())  # fmt: skip
+
+    groups = {
+        "early value alerts": value[value["snapshot"] == "open"],
+        "closing value alerts": value[value["snapshot"] == "close"],
+        "all early prices (baseline)": baseline,
+    }
+    rows, details = [], []
+    for name, bets in groups.items():
+        d = _add_clv_and_pnl(bets[["match_id", "bookmaker", "outcome", "odds"]], fair, results)
+        has_clv = name != "closing value alerts"
+        lo, hi = bootstrap_roi_ci(d)
+        rows.append({
+            "group": name,
+            "n": len(d),
+            "avg_clv": d["clv"].mean() if has_clv else float("nan"),
+            "beat_close_pct": (d["clv"].dropna() > 0).mean() if has_clv else float("nan"),
+            "roi": d["pnl"].mean() if len(d) else float("nan"),
+            "roi_ci_low": lo,
+            "roi_ci_high": hi,
+        })  # fmt: skip
+        if name != "all early prices (baseline)":
+            details.append(d.assign(group=name))
+    detail = pd.concat(details, ignore_index=True) if details else pd.DataFrame()
+    return pd.DataFrame(rows), detail
+
+
+def exchange_check(
+    odds: pd.DataFrame, alerts: pd.DataFrame, threshold: float = 0.03, method: str = "power"
+) -> tuple[int, int]:
+    """Second opinion: of value alerts graded against Pinnacle, how many still clear the threshold
+    against Betfair Exchange (de-vigged, same snapshot)? Returns (checked, confirmed).
+
+    Alerts at matches with no exchange price are not counted.
+    """
+    devig = DEVIG[method]
+    bfe = odds[odds["bookmaker"] == "Betfair Exchange"].set_index(["match_id", "snapshot"])
+    pin = alerts[(alerts["alert_type"] == "value") & (alerts["reference"] == "Pinnacle")]
+    checked = confirmed = 0
+    for a in pin.itertuples(index=False):
+        if (a.match_id, a.snapshot) not in bfe.index:
+            continue
+        row = bfe.loc[(a.match_id, a.snapshot)]
+        fair = dict(zip(OUTCOMES, devig((row.odds_h, row.odds_d, row.odds_a)), strict=True))
+        checked += 1
+        confirmed += fair[a.outcome] * a.odds - 1 > threshold
+    return checked, int(confirmed)
