@@ -182,9 +182,22 @@ def _pct(x: float, fmt: str = "{:+.1%}") -> str:
     return "–" if pd.isna(x) else fmt.format(x)
 
 
+def _group_label(row, lang: str) -> str:
+    """Group name; a group mixing early and closing bets says how many of each."""
+    name = i18n.GROUPS_ZH[row.group] if lang == "zh" else row.group
+    early, close = row.n_early, row.n - row.n_early
+    if early and close:
+        name += (
+            f"（{early} 早盘 + {close} 收盘）"
+            if lang == "zh"
+            else f" ({early} early + {close} closing)"
+        )
+    return name
+
+
 def friendly_performance(perf: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
     return _localise(pd.DataFrame({
-        "Group": perf["group"].map(lambda g: i18n.GROUPS_ZH[g] if lang == "zh" else g),
+        "Group": [_group_label(r, lang) for r in perf.itertuples()],
         "Bets": perf["n"],
         "Return per unit": perf["roi"] * 100,
         "95% range": [f"{_pct(lo, '{:+.0%}')} … {_pct(hi, '{:+.0%}')}"

@@ -109,6 +109,7 @@ def performance(
         rows.append({
             "group": name,
             "n": len(d),
+            "n_early": int((d["snapshot"] == "open").sum()),
             "n_clv": int(d["clv"].notna().sum()),
             "avg_clv": d["clv"].mean() if has_clv else float("nan"),
             "beat_close_pct": (d["clv"].dropna() > 0).mean() if has_clv else float("nan"),

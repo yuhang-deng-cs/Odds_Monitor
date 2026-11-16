@@ -8,6 +8,7 @@ def _perf() -> pd.DataFrame:
     return pd.DataFrame({
         "group": ["early value alerts", "closing value alerts", "exchange-confirmed alerts"],
         "n": [40, 113, 21],
+        "n_early": [40, 0, 3],
         "n_clv": [40, 0, 3],
         "avg_clv": [-0.006, float("nan"), 0.049],
         "beat_close_pct": [0.6, float("nan"), 1.0],
@@ -35,3 +36,11 @@ def test_chinese_column_names_get_the_same_formats():
     zh = friendly_performance(_perf(), lang="zh")
     assert set(number_formats("zh")) & set(zh.columns) >= {"平均 CLV", "有 CLV 的注数"}
     assert _formatted(zh)["平均 CLV"].tolist() == ["-0.6%", "–", "+4.9%"]
+
+
+def test_mixed_group_says_how_many_early_and_closing_bets():
+    groups = friendly_performance(_perf())["Group"].tolist()
+    assert groups[0] == "early value alerts"
+    assert groups[2] == "exchange-confirmed alerts (3 early + 18 closing)"
+    zh = friendly_performance(_perf(), lang="zh")["分组"].tolist()
+    assert zh[2] == "交易所确认的提醒（3 早盘 + 18 收盘）"
