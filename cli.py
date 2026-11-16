@@ -75,6 +75,9 @@ def cmd_clv(args: argparse.Namespace) -> None:
         f"\nsecond opinion: {confirmed} of {checked} Pinnacle-graded alerts also clear the "
         "threshold against Betfair Exchange"
     )
+    by_check = clv.by_exchange_check(odds, alerts, args.method)
+    print("\nvalue alerts by the exchange's verdict")
+    print(by_check.to_string(index=False, float_format=lambda x: f"{x:+.4f}"))
 
 
 def cmd_exposure(args: argparse.Namespace) -> None:

@@ -22,6 +22,7 @@ League data.**
 Real numbers from the three seasons (details and caveats in [Results](#results-on-the-three-seasons)):
 - **Margins range from 0.56% to 6.51%.** Average closing margin: Betfair Exchange 0.56%, Pinnacle 2.96%, Bet365 5.51%, Ladbrokes 6.51%.
 - **Most "value" is one sharp book disagreeing.** Of 119 Pinnacle-graded alerts with an exchange price, only 21 still cleared 3% against Betfair Exchange. Requiring both to agree is the obvious fix: the 3 early ones all beat the close (CLV +4.9%), but 21 bets prove nothing about profit yet (−45%, range −89% … +13%).
+- **Alerts with no sharp second source were the worst:** closing alerts graded without an exchange price lost 61% per unit, and their 95% range (−90% … −23%) excludes zero. First rule for production: no sharp reference, no alert.
 - **Closing-odds alerts lost money:** −43% per unit staked (95% range −70% … −6%). Early alerts beat the close 60% of the time vs 20% for a typical early price, but on only 40 bets.
 - **As a simulated sportsbook** on Bet365's closing prices, expected profit was 5.2% of stakes (close to its 5.51% margin), 4.5% on the real results, and 75 of 1,140 matches breached a 10,000-unit exposure limit.
 - **Arbitrage is rare and thin:** 34 cases, median locked-in return 0.39%.
@@ -113,7 +114,7 @@ report.py          self-contained HTML report (charts embedded as PNG)
 download.py        polite, idempotent downloader (validates each file before saving)
 app.py             Streamlit dashboard (builds the database on first run)
 cli.py             argparse entry point
-tests/             pytest suite (62 tests, synthetic data, no network)
+tests/             pytest suite (63 tests, synthetic data, no network)
 .github/workflows/ CI: ruff lint + format check and pytest on Python 3.11 and 3.13
 ```
 
@@ -154,6 +155,23 @@ From the actual run (`python cli.py ...`):
   those 21 (3 early, 18 closing): the early ones all beat the close, but 21 bets cannot show whether the
   two-source rule makes money. Intervals resample whole matches, because one odd price can trigger several
   alerts at once.
+
+  Split by the exchange's verdict (*no second source* = no exchange price, or not graded against Pinnacle):
+
+  | odds taken | exchange check | n | return per unit | 95% range | avg CLV | beat the close |
+  |---|---|---|---|---|---|---|
+  | early | confirmed | 3 | −100% | −100% … −100% | +4.9% | 100% |
+  | early | rejected | 29 | −2.0% | −75% … +89% | −1.4% | 62% |
+  | early | no second source | 8 | +121.9% | −41% … +328% | −0.1% | 38% |
+  | closing | confirmed | 18 | −35.4% | −87% … +34% | – | – |
+  | closing | rejected | 69 | −38.3% | −77% … +19% | – | – |
+  | closing | no second source | 26 | −60.7% | **−90% … −23%** | – | – |
+
+  Confirmed early alerts had about 6 points better CLV than rejected ones (+4.9% vs −1.4%): the right
+  direction, but only 3 bets (all 3 lost). Rejected alerts still beat a typical early price (−6.2%) but not
+  the close: fair prices, not value. The clearest result is the other way round: **closing alerts with no
+  sharp second source lost 61%, and their range excludes zero.** The first rule to ship would be
+  "no sharp reference, no alert".
 - **Simulated exposure** (`python cli.py exposure`, Bet365 closing prices as "ours", 10,000 recreational
   units per match, +2,000 sharp stake where our price beats fair by > 3%, limit 10,000):
   expected profit 591,402 on 11,422,000 staked (5.2%, close to Bet365's 5.51% margin), 517,448 on the real
@@ -208,7 +226,7 @@ From the actual run (`python cli.py ...`):
 
 ## Testing
 ```bash
-pytest          # 62 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
+pytest          # 63 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
                 # Shin de-vig, idempotent ingest, SQL window queries, arbitrage/mispricing detection,
                 # two-source confirmation, CLV and
                 # bootstrap, liability maths, calibration, downloader, CLI, dashboard (incl.

@@ -45,6 +45,7 @@ def gather(
         "reliability": {k: calibration.reliability_table(preds[k]) for k in ("open/power", "close/power")},
         "performance": clv.performance(odds, alerts, method)[0],
         "exchange_check": clv.exchange_check(alerts),
+        "by_check": clv.by_exchange_check(odds, alerts, method),
         "exposure": exposure,
         "exposure_summary": liability.summarise(exposure),
         "exposure_params": params,
@@ -182,6 +183,14 @@ def _pct(x: float, fmt: str = "{:+.1%}") -> str:
     return "–" if pd.isna(x) else fmt.format(x)
 
 
+def _ranges(df: pd.DataFrame) -> list[str]:
+    """The bootstrap ROI range as text, e.g. '-54% … +99%'."""
+    lows, highs = df["roi_ci_low"], df["roi_ci_high"]
+    return [
+        f"{_pct(lo, '{:+.0%}')} … {_pct(hi, '{:+.0%}')}" for lo, hi in zip(lows, highs, strict=True)
+    ]
+
+
 def _group_label(row, lang: str) -> str:
     """Group name; a group mixing early and closing bets says how many of each."""
     name = i18n.GROUPS_ZH[row.group] if lang == "zh" else row.group
@@ -200,12 +209,24 @@ def friendly_performance(perf: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
         "Group": [_group_label(r, lang) for r in perf.itertuples()],
         "Bets": perf["n"],
         "Return per unit": perf["roi"] * 100,
-        "95% range": [f"{_pct(lo, '{:+.0%}')} … {_pct(hi, '{:+.0%}')}"
-                      for lo, hi in zip(perf["roi_ci_low"], perf["roi_ci_high"], strict=True)],
+        "95% range": _ranges(perf),
         # CLV needs a later price to beat, so only early bets have it: show how many did.
         "Bets with CLV": perf["n_clv"],
         "Average CLV": perf["avg_clv"] * 100,
         "Beat the close": perf["beat_close_pct"] * 100,
+    }), lang)  # fmt: skip
+
+
+def friendly_by_check(by_check: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
+    """Value alerts split by snapshot and by the exchange's verdict."""
+    return _localise(pd.DataFrame({
+        "Odds taken": by_check["snapshot"].map(lambda s: i18n.value(s, lang)),
+        "Exchange check": by_check["check"].map(lambda c: i18n.value(c, lang)),
+        "Bets": by_check["n"],
+        "Return per unit": by_check["roi"] * 100,
+        "95% range": _ranges(by_check),
+        "Average CLV": by_check["avg_clv"] * 100,
+        "Beat the close": by_check["beat_close_pct"] * 100,
     }), lang)  # fmt: skip
 
 
@@ -437,6 +458,10 @@ f"如果每条提醒都下注 1 个单位并按真实赛果结算：早盘提醒
 f"A second opinion explains much of this: of {checked} alerts graded against Pinnacle that also had a Betfair Exchange price, only {confirmed} still cleared the {threshold:.0%} threshold against the exchange. Most alerts come from Pinnacle alone disagreeing with the market, so a production version should require two sharp sources to agree. The <i>exchange-confirmed alerts</i> row tests that rule: {int(both.n)} bets, average CLV {_pct(both.avg_clv)} on the early ones, but a return of {_pct(both.roi)} per unit with a 95% range of {_pct(both.roi_ci_low, '{:+.0%}')} to {_pct(both.roi_ci_high, '{:+.0%}')}{both_note}. (Ranges come from resampling whole matches, because one odd price can trigger several alerts at once.)",
 f"用第二个参考源复核可以解释其中大部分原因：在以 Pinnacle 为参考、且同时有 Betfair Exchange 报价的 {checked} 条提醒中，只有 {confirmed} 条相对交易所仍超过 {threshold:.0%} 的阈值。大多数提醒只是 Pinnacle 单独与市场不一致，所以生产版本应要求两个专业参考源一致才发出提醒。表中“交易所确认的提醒”一行检验了这条规则：共 {int(both.n)} 注，其中早盘部分的平均 CLV 为 {_pct(both.avg_clv)}，但每单位回报 {_pct(both.roi)}，95% 区间 {_pct(both.roi_ci_low, '{:+.0%}')} 至 {_pct(both.roi_ci_high, '{:+.0%}')}{both_note}。（区间按整场比赛重抽样计算，因为一个异常报价可能同时触发多条提醒。）")}</p>
 {_tables(friendly_performance, data["performance"])}
+<p class="explain">{t(
+"<span class='key'>By the exchange's verdict.</span> The same value alerts, split by what Betfair Exchange said: <i>confirmed</i> (it agrees the price is too generous), <i>rejected</i> (it doesn't), or <i>no second source</i> (no exchange price, or the alert was not graded against Pinnacle). Compare CLV between confirmed and rejected early alerts, and check which rows have a 95% range that excludes zero.",
+"<span class='key'>按交易所复核结果拆分。</span>同一批价值提醒，按 Betfair Exchange 的判断分为：<i>确认</i>（交易所也认为价格偏高）、<i>否决</i>（交易所不认为偏高）、<i>无法复核</i>（没有交易所报价，或提醒并非以 Pinnacle 为参考）。可以比较确认与否决的早盘提醒的 CLV，并看哪些行的 95% 区间不包含 0。")}</p>
+{_tables(friendly_by_check, data["by_check"])}
 
 <h2>{t("Simulated: our exposure as a sportsbook", "模拟：作为博彩公司的风险敞口")}</h2>
 <p class="banner sim">{t(

@@ -9,10 +9,12 @@ VALUES = {
     "en": {
         "H": "Home win", "D": "Draw", "A": "Away win", "ALL": "All outcomes",
         "open": "Early", "close": "Closing",
+        "confirmed": "Confirmed", "rejected": "Rejected", "no second source": "No second source",
     },
     "zh": {
         "H": "主胜", "D": "平局", "A": "客胜", "ALL": "全部结果",
         "open": "早盘", "close": "收盘",
+        "confirmed": "确认", "rejected": "否决", "no second source": "无法复核",
     },
 }  # fmt: skip
 
@@ -25,7 +27,7 @@ COLUMNS_ZH = {
     "Best prices used": "所用最佳赔率", "Locked-in return": "锁定收益",
     "Group": "分组", "Bets": "注数", "Bets with CLV": "有 CLV 的注数",
     "Average CLV": "平均 CLV", "Beat the close": "跑赢收盘比例",
-    "Return per unit": "每单位回报", "95% range": "95% 区间",
+    "Return per unit": "每单位回报", "95% range": "95% 区间", "Exchange check": "交易所复核",
     "Metric": "指标", "Value": "数值", "Our price (H/D/A)": "我方赔率（主/平/客）",
     "Stakes H/D/A": "投注额 主/平/客", "Sharp bets on": "职业玩家下注", "Worst case": "最坏情况",
     "Actual P&L": "实际盈亏",

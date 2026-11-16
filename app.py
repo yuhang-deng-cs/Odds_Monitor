@@ -27,6 +27,7 @@ from odds import fair_price_table, overround
 from report import (
     BLUE,
     friendly_alerts,
+    friendly_by_check,
     friendly_exposure,
     friendly_exposure_summary,
     friendly_moves,
@@ -95,6 +96,8 @@ TEXT = {
                "**收盘价值（CLV）** 检验早盘赔率到收盘（市场信息最充分）时是否仍然偏高：CLV = 早盘赔率 × 收盘公平概率 − 1。基准是全部早盘赔率；提醒只有明显优于基准才有用。*每单位回报*是按真实赛果、每条提醒下注 1 单位的结果；95% 区间按整场比赛重抽样得到。CLV 需要之后的价格来比较，所以只有早盘注才有：*有 CLV 的注数*显示每个 CLV 数字基于多少注。"),
     "second": ("Second opinion: of **{c}** alerts graded against Pinnacle that also had a Betfair Exchange price, only **{k}** still cleared the threshold against the exchange. The *exchange-confirmed alerts* row backtests just those: the rule \"two sharp sources must agree\".",
                "第二参考源复核：在以 Pinnacle 为参考、且有 Betfair Exchange 报价的 **{c}** 条提醒中，只有 **{k}** 条相对交易所仍超过阈值。表中“交易所确认的提醒”一行只回测这些提醒，即“两个专业参考源必须一致”的规则。"),
+    "by_check": ("**By the exchange's verdict.** The same value alerts, split by what Betfair Exchange said: *confirmed* (it agrees the price is too generous), *rejected* (it doesn't), or *no second source* (no exchange price, or the alert was not graded against Pinnacle). Compare CLV between confirmed and rejected early alerts, and check which rows have a 95% range that excludes zero.",
+                 "**按交易所复核结果拆分**：同一批价值提醒，按 Betfair Exchange 的判断分为*确认*（交易所也认为价格偏高）、*否决*（交易所不认为偏高）和*无法复核*（没有交易所报价，或提醒并非以 Pinnacle 为参考）。可以比较确认与否决的早盘提醒的 CLV，并看哪些行的 95% 区间不包含 0。"),
     "exp_h": ("If we were the bookmaker: how much could one match cost us?", "如果我们是庄家：一场比赛最多会亏多少？"),
     "exp_sim": ("**Simulated bets.** Prices and results are real; the bets are made up because the data has no stake information.",
                 "**模拟投注**。赔率和赛果是真实的；投注是模拟的，因为数据中没有投注金额。"),
@@ -154,7 +157,11 @@ def run_alerts(odds: pd.DataFrame, threshold: float, method: str) -> pd.DataFram
 
 @st.cache_data
 def run_performance(odds: pd.DataFrame, alerts: pd.DataFrame, threshold: float, method: str):
-    return clv.performance(odds, alerts, method)[0], clv.exchange_check(alerts)
+    return (
+        clv.performance(odds, alerts, method)[0],
+        clv.exchange_check(alerts),
+        clv.by_exchange_check(odds, alerts, method),
+    )
 
 
 @st.cache_data
@@ -350,9 +357,12 @@ with tab_p:
     st.subheader(tx("perf_h"))
     st.markdown(tx("perf_what"))
     st.markdown(tx("perf_p"))
-    perf, (checked, confirmed) = run_performance(odds, alerts, threshold, method)
+    perf, (checked, confirmed), by_check = run_performance(odds, alerts, threshold, method)
     table(friendly_performance(perf, lang))
     st.markdown(tx("second", c=checked, k=confirmed))
+    if not by_check.empty:
+        st.markdown(tx("by_check"))
+        table(friendly_by_check(by_check, lang))
 
 with tab_x:
     st.subheader(tx("exp_h"))

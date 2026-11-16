@@ -72,6 +72,24 @@ def test_exchange_second_opinion_counts():
     assert clv.exchange_check(alerts) == (2, 1)  # the alert with no second source is not counted
 
 
+def test_alerts_split_by_the_exchange_verdict():
+    alerts = pd.concat([
+        _alert(6.0, confirmed=True),
+        _alert(4.4, confirmed=False),
+        _alert(5.0, snapshot="close"),  # no second source
+    ])  # fmt: skip
+    split = clv.by_exchange_check(ODDS, alerts).set_index(["snapshot", "check"])
+    assert list(split.index) == [
+        ("open", "confirmed"),
+        ("open", "rejected"),
+        ("close", "no second source"),
+    ]
+    assert split["n"].tolist() == [1, 1, 1]
+    p_close = devig_power([2.00, 3.60, 4.00])[2]
+    assert split.loc[("open", "confirmed"), "avg_clv"] == pytest.approx(6.0 * p_close - 1)
+    assert pd.isna(split.loc[("close", "no second source"), "avg_clv"])  # closing bets: no CLV
+
+
 def test_confirmed_alerts_get_their_own_backtest_row():
     alerts = pd.concat([_alert(6.0, confirmed=True), _alert(4.4, snapshot="close", confirmed=True)])
     summary, _ = clv.performance(ODDS, alerts)

@@ -69,6 +69,26 @@ def bootstrap_roi_ci(bets: pd.DataFrame, seed: int = 0) -> tuple[float, float]:
     return float(np.percentile(rois, 2.5)), float(np.percentile(rois, 97.5))
 
 
+BET_COLUMNS = ["match_id", "bookmaker", "snapshot", "outcome", "odds"]
+CHECK_ORDER = ("confirmed", "rejected", "no second source")
+
+
+def _summarise(d: pd.DataFrame) -> dict[str, float]:
+    """Counts, CLV (early bets only) and flat-stake ROI with its match-level bootstrap range."""
+    has_clv = d["clv"].notna().any()
+    lo, hi = bootstrap_roi_ci(d)
+    return {
+        "n": len(d),
+        "n_early": int((d["snapshot"] == "open").sum()),
+        "n_clv": int(d["clv"].notna().sum()),
+        "avg_clv": d["clv"].mean() if has_clv else float("nan"),
+        "beat_close_pct": (d["clv"].dropna() > 0).mean() if has_clv else float("nan"),
+        "roi": d["pnl"].mean() if len(d) else float("nan"),
+        "roi_ci_low": lo,
+        "roi_ci_high": hi,
+    }
+
+
 def performance(
     odds: pd.DataFrame, alerts: pd.DataFrame, method: str = "power"
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -102,25 +122,36 @@ def performance(
     }
     rows, details = [], []
     for name, bets in groups.items():
-        cols = ["match_id", "bookmaker", "snapshot", "outcome", "odds"]
-        d = _add_clv_and_pnl(bets[cols], fair, results)
-        has_clv = d["clv"].notna().any()
-        lo, hi = bootstrap_roi_ci(d)
-        rows.append({
-            "group": name,
-            "n": len(d),
-            "n_early": int((d["snapshot"] == "open").sum()),
-            "n_clv": int(d["clv"].notna().sum()),
-            "avg_clv": d["clv"].mean() if has_clv else float("nan"),
-            "beat_close_pct": (d["clv"].dropna() > 0).mean() if has_clv else float("nan"),
-            "roi": d["pnl"].mean() if len(d) else float("nan"),
-            "roi_ci_low": lo,
-            "roi_ci_high": hi,
-        })  # fmt: skip
+        d = _add_clv_and_pnl(bets[BET_COLUMNS], fair, results)
+        rows.append({"group": name, **_summarise(d)})
         if name != "all early prices (baseline)":
             details.append(d.assign(group=name))
     detail = pd.concat(details, ignore_index=True) if details else pd.DataFrame()
     return pd.DataFrame(rows), detail
+
+
+def by_exchange_check(
+    odds: pd.DataFrame, alerts: pd.DataFrame, method: str = "power"
+) -> pd.DataFrame:
+    """Value alerts split by snapshot and by what the second sharp source said:
+    confirmed (Betfair Exchange agrees), rejected (it doesn't), or no second source
+    (no exchange price, or the alert was not graded against Pinnacle)."""
+    fair = closing_fair(odds, method)
+    results = odds.drop_duplicates("match_id").set_index("match_id")["result"]
+    value = alerts[alerts["alert_type"] == "value"]
+    check = value["confirmed"].map(
+        lambda c: CHECK_ORDER[2] if pd.isna(c) else CHECK_ORDER[0] if c else CHECK_ORDER[1]
+    )
+    rows = []
+    for snapshot in ("open", "close"):
+        for status in CHECK_ORDER:
+            bets = value[(value["snapshot"] == snapshot) & (check == status)]
+            if not bets.empty:
+                d = _add_clv_and_pnl(bets[BET_COLUMNS], fair, results)
+                rows.append({"snapshot": snapshot, "check": status, **_summarise(d)})
+    columns = ["snapshot", "check", "n", "n_early", "n_clv", "avg_clv", "beat_close_pct",
+               "roi", "roi_ci_low", "roi_ci_high"]  # fmt: skip
+    return pd.DataFrame(rows, columns=columns)
 
 
 def exchange_check(alerts: pd.DataFrame) -> tuple[int, int]:
