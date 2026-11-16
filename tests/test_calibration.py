@@ -32,7 +32,7 @@ def test_run_writes_outputs(raw_dir, tmp_path):
 
     odds = load_dir(raw_dir)
     summary, _ = run(odds, tmp_path / "reports")
-    assert set(summary["method"]) == {"proportional", "power", "base rates"}
+    assert set(summary["method"]) == {"proportional", "power", "shin", "base rates"}
     assert (summary["n_matches"] == 3).all()  # every match has Pinnacle in both snapshots
     for name in ("calibration.png", "calibration_summary.csv", "reliability.csv"):
         assert (tmp_path / "reports" / name).exists()

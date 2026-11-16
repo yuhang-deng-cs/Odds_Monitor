@@ -14,7 +14,7 @@ Historical replay only: results and prices are real, no bets were placed.
 import numpy as np
 import pandas as pd
 
-from detector import DEVIG, EXCHANGES, OUTCOMES, reference_probs
+from detector import EXCHANGES, OUTCOMES, reference_probs
 
 BOOTSTRAP_SAMPLES = 2000
 
@@ -37,11 +37,17 @@ def closing_fair(odds: pd.DataFrame, method: str = "power") -> pd.DataFrame:
 
 
 def _add_clv_and_pnl(bets: pd.DataFrame, fair: pd.DataFrame, results: pd.Series) -> pd.DataFrame:
-    """bets needs match_id, outcome, odds. Adds close_fair_prob, clv, won and pnl (1-unit stake)."""
+    """bets needs match_id, outcome, odds. Adds close_fair_prob, clv, won and pnl (1-unit stake).
+
+    CLV only exists for early prices: a bet placed AT the close has no later price to beat, so
+    rows with snapshot == "close" get clv = NaN.
+    """
     long_fair = fair.melt(id_vars="match_id", value_vars=list(OUTCOMES), var_name="outcome",
                           value_name="close_fair_prob")  # fmt: skip
     out = bets.merge(long_fair, on=["match_id", "outcome"], how="left")
     out["clv"] = out["odds"] * out["close_fair_prob"] - 1
+    if "snapshot" in out:
+        out.loc[out["snapshot"] == "close", "clv"] = np.nan
     out["won"] = out["match_id"].map(results) == out["outcome"]
     out["pnl"] = np.where(out["won"], out["odds"] - 1, -1.0)
     return out
@@ -71,6 +77,8 @@ def performance(
     Groups compared:
     - early value alerts: the detector's flags on early odds -> CLV is measurable;
     - closing value alerts: flagged at the close -> no later price, so CLV is not defined;
+    - exchange-confirmed alerts (both snapshots): Pinnacle AND Betfair Exchange agree there is
+      an edge, i.e. the "require two sharp sources" rule; CLV from the early ones only;
     - baseline: EVERY early sportsbook price (all books, all outcomes). Its CLV should sit
       near minus the margin; alerts are only useful if they clearly beat it.
     roi is the realised profit per unit staked with a flat 1-unit stake on the real results.
@@ -79,21 +87,24 @@ def performance(
     results = odds.drop_duplicates("match_id").set_index("match_id")["result"]
 
     value = alerts[alerts["alert_type"] == "value"]
+    confirmed = value[value["confirmed"].fillna(False).astype(bool)]
     early = odds[(odds["snapshot"] == "open") & ~odds["bookmaker"].isin(EXCHANGES)]
     baseline = early.melt(
         id_vars=["match_id", "bookmaker"], value_vars=["odds_h", "odds_d", "odds_a"],
         var_name="outcome", value_name="odds",
-    ).assign(outcome=lambda d: d["outcome"].str[-1].str.upper())  # fmt: skip
+    ).assign(outcome=lambda d: d["outcome"].str[-1].str.upper(), snapshot="open")  # fmt: skip
 
     groups = {
         "early value alerts": value[value["snapshot"] == "open"],
         "closing value alerts": value[value["snapshot"] == "close"],
+        "exchange-confirmed alerts": confirmed,
         "all early prices (baseline)": baseline,
     }
     rows, details = [], []
     for name, bets in groups.items():
-        d = _add_clv_and_pnl(bets[["match_id", "bookmaker", "outcome", "odds"]], fair, results)
-        has_clv = name != "closing value alerts"
+        cols = ["match_id", "bookmaker", "snapshot", "outcome", "odds"]
+        d = _add_clv_and_pnl(bets[cols], fair, results)
+        has_clv = d["clv"].notna().any()
         lo, hi = bootstrap_roi_ci(d)
         rows.append({
             "group": name,
@@ -110,23 +121,11 @@ def performance(
     return pd.DataFrame(rows), detail
 
 
-def exchange_check(
-    odds: pd.DataFrame, alerts: pd.DataFrame, threshold: float = 0.03, method: str = "power"
-) -> tuple[int, int]:
-    """Second opinion: of value alerts graded against Pinnacle, how many still clear the threshold
-    against Betfair Exchange (de-vigged, same snapshot)? Returns (checked, confirmed).
+def exchange_check(alerts: pd.DataFrame) -> tuple[int, int]:
+    """Second opinion: of value alerts graded against Pinnacle that also had a Betfair Exchange
+    price, how many still clear the threshold against the exchange? Returns (checked, confirmed).
 
-    Alerts at matches with no exchange price are not counted.
+    Reads the detector's `confirmed` column; alerts with no second sharp source are not counted.
     """
-    devig = DEVIG[method]
-    bfe = odds[odds["bookmaker"] == "Betfair Exchange"].set_index(["match_id", "snapshot"])
-    pin = alerts[(alerts["alert_type"] == "value") & (alerts["reference"] == "Pinnacle")]
-    checked = confirmed = 0
-    for a in pin.itertuples(index=False):
-        if (a.match_id, a.snapshot) not in bfe.index:
-            continue
-        row = bfe.loc[(a.match_id, a.snapshot)]
-        fair = dict(zip(OUTCOMES, devig((row.odds_h, row.odds_d, row.odds_a)), strict=True))
-        checked += 1
-        confirmed += fair[a.outcome] * a.odds - 1 > threshold
-    return checked, int(confirmed)
+    flags = alerts.loc[alerts["alert_type"] == "value", "confirmed"].dropna().astype(bool)
+    return len(flags), int(flags.sum())

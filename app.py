@@ -65,10 +65,11 @@ TEXT = {
     "calc_input": ("Decimal odds", "小数赔率"),
     "calc_bad": ("Enter at least two decimal odds above 1.0, e.g. 3.0 4.5 6.0", "请输入至少两个大于 1.0 的小数赔率，例如 3.0 4.5 6.0"),
     "calc_over": ("Overround (bookmaker margin)", "超额率（博彩公司利润率）"), "calc_n": ("Outcomes", "结果数"),
-    "calc_note": ("Compare the two methods: power removes relatively more margin from the longshots at the bottom and less from the favourite at the top (the favourite–longshot bias).",
-                  "对比两种方法：power 法从底部的冷门身上去掉更多利润率，从顶部的热门身上去掉更少（即热门-冷门偏差）。"),
+    "calc_note": ("Compare the methods: power and Shin remove relatively more margin from the longshots at the bottom and less from the favourite at the top (the favourite–longshot bias). Shin models a share of insider money and trims the longest shots hardest.",
+                  "对比几种方法：power 法和 Shin 法从底部的冷门身上去掉更多利润率，从顶部的热门身上去掉更少（即热门-冷门偏差）。Shin 法假设有一部分资金来自内幕知情者，对最冷门的选项削减最多。"),
     "runner": ("Runner", "编号"), "c_odds": ("Odds", "赔率"), "c_implied": ("Implied (with margin)", "隐含概率（含水）"),
     "c_prop": ("Fair: proportional", "公平概率：比例法"), "c_power": ("Fair: power", "公平概率：power 法"),
+    "c_shin": ("Fair: Shin", "公平概率：Shin 法"),
     "c_fair_odds": ("Fair odds (power)", "公平赔率（power）"),
     "perf_what": ("**What is CLV?** Example: a bookmaker offered 4.40 early; at kick-off the sharp market rated the outcome a 25% chance (fair odds 4.00). CLV = 4.40 × 0.25 − 1 = **+10%**: the early price was too generous and the market corrected it. Positive CLV over many bets is the standard sign of a good bettor, and for a sportsbook, of a price that sharp customers will pick off.",
                   "**什么是 CLV？**举例：某博彩公司早盘开出 4.40；开赛时专业市场认为该结果有 25% 的概率（公平赔率 4.00）。CLV = 4.40 × 0.25 − 1 = **+10%**：说明早盘价格给得太高，后来被市场修正了。长期正的 CLV 是判断职业玩家水平的标准指标；对博彩公司来说，则意味着这个价格会被职业玩家利用。"),
@@ -91,8 +92,8 @@ TEXT = {
     "perf_h": ("Did the alerts hold up?", "这些提醒经得起检验吗？"),
     "perf_p": ("**Closing line value (CLV)** asks whether an early price was still generous at the close, when the market knew most: CLV = early odds × closing fair chance − 1. The baseline is every early price; alerts are only useful if they clearly beat it. *Return per unit* stakes 1 unit on every alert using the real results; the 95% range comes from resampling whole matches.",
                "**收盘价值（CLV）**检验早盘赔率到收盘（市场信息最充分）时是否仍然偏高：CLV = 早盘赔率 × 收盘公平概率 − 1。基准是全部早盘赔率；提醒只有明显优于基准才有用。*每单位回报*是按真实赛果、每条提醒下注 1 单位的结果；95% 区间按整场比赛重抽样得到。"),
-    "second": ("Second opinion: of **{c}** alerts graded against Pinnacle that also had a Betfair Exchange price, only **{k}** still cleared the threshold against the exchange.",
-               "第二参考源复核：在以 Pinnacle 为参考、且有 Betfair Exchange 报价的 **{c}** 条提醒中，只有 **{k}** 条相对交易所仍超过阈值。"),
+    "second": ("Second opinion: of **{c}** alerts graded against Pinnacle that also had a Betfair Exchange price, only **{k}** still cleared the threshold against the exchange. The *exchange-confirmed alerts* row backtests just those: the rule \"two sharp sources must agree\".",
+               "第二参考源复核：在以 Pinnacle 为参考、且有 Betfair Exchange 报价的 **{c}** 条提醒中，只有 **{k}** 条相对交易所仍超过阈值。表中“交易所确认的提醒”一行只回测这些提醒，即“两个专业参考源必须一致”的规则。"),
     "exp_h": ("If we were the bookmaker: how much could one match cost us?", "如果我们是庄家：一场比赛最多会亏多少？"),
     "exp_sim": ("**Simulated bets.** Prices and results are real; the bets are made up because the data has no stake information.",
                 "**模拟投注。**赔率和赛果是真实的；投注是模拟的，因为数据中没有投注金额。"),
@@ -152,9 +153,7 @@ def run_alerts(odds: pd.DataFrame, threshold: float, method: str) -> pd.DataFram
 
 @st.cache_data
 def run_performance(odds: pd.DataFrame, alerts: pd.DataFrame, threshold: float, method: str):
-    return clv.performance(odds, alerts, method)[0], clv.exchange_check(
-        odds, alerts, threshold, method
-    )
+    return clv.performance(odds, alerts, method)[0], clv.exchange_check(alerts)
 
 
 @st.cache_data
@@ -450,6 +449,7 @@ with tab_calc:
                 "implied": st.column_config.NumberColumn(tx("c_implied"), format="percent"),
                 "proportional": st.column_config.NumberColumn(tx("c_prop"), format="percent"),
                 "power": st.column_config.NumberColumn(tx("c_power"), format="percent"),
+                "shin": st.column_config.NumberColumn(tx("c_shin"), format="percent"),
                 "fair_odds": st.column_config.NumberColumn(tx("c_fair_odds"), format="%.2f"),
             },
         )

@@ -5,10 +5,10 @@ Runs per (match, snapshot) over historical odds: a replay, not a live system.
 
 import pandas as pd
 
-from odds import devig_power, devig_proportional
+from odds import devig_power, devig_proportional, devig_shin
 
 OUTCOMES = ("H", "D", "A")
-DEVIG = {"proportional": devig_proportional, "power": devig_power}
+DEVIG = {"proportional": devig_proportional, "power": devig_power, "shin": devig_shin}
 
 # Fair-price reference, first one present wins. Pinnacle is the classic low-margin "sharp"
 # book. Betfair Exchange is a peer-to-peer market with ~0.6% overround in this data, but its
@@ -19,7 +19,7 @@ EXCHANGES = {"Betfair Exchange"}
 
 ALERT_COLUMNS = [
     "alert_type", "match_id", "match_date", "home", "away", "snapshot",
-    "bookmaker", "outcome", "odds", "fair_prob", "edge", "reference",
+    "bookmaker", "outcome", "odds", "fair_prob", "edge", "reference", "confirmed",
 ]  # fmt: skip
 DEDUPE_KEY = ["alert_type", "match_id", "snapshot", "bookmaker", "outcome"]
 
@@ -47,8 +47,15 @@ def value_alerts(
 
     edge = fair_prob * odds - 1 is the expected profit per unit staked if the reference
     probabilities are right. Example: fair 0.25 at odds 4.40 -> edge = 0.10 (10%).
+
+    confirmed: a second opinion. When the reference is Pinnacle and Betfair Exchange also
+    priced the match, True if the edge ALSO clears the threshold against the de-vigged
+    exchange price, else False. None when there is no second sharp source to ask.
     """
     fair, ref = reference_probs(prices, method)
+    second = None
+    if ref == "Pinnacle" and "Betfair Exchange" in prices:
+        second = DEVIG[method](prices["Betfair Exchange"])
     alerts = []
     for book, odds in sorted(prices.items()):
         if book == ref or book in EXCHANGES:
@@ -56,9 +63,13 @@ def value_alerts(
         for outcome, p, o in zip(OUTCOMES, fair, odds, strict=True):
             edge = p * o - 1
             if edge > threshold:
+                confirmed = (
+                    None if second is None else second[OUTCOMES.index(outcome)] * o - 1 > threshold
+                )
                 alerts.append(
                     {"alert_type": "value", "bookmaker": book, "outcome": outcome,
-                     "odds": o, "fair_prob": p, "edge": edge, "reference": ref}
+                     "odds": o, "fair_prob": p, "edge": edge, "reference": ref,
+                     "confirmed": confirmed}
                 )  # fmt: skip
     return alerts
 
@@ -86,6 +97,7 @@ def arbitrage_alert(prices: dict[str, tuple[float, float, float]]) -> dict | Non
         "fair_prob": total,  # stored as the sum of implied probs of the best prices
         "edge": 1 / total - 1,
         "reference": "best_price",
+        "confirmed": None,
     }
 
 

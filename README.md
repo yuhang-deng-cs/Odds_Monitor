@@ -21,7 +21,7 @@ League data.**
 ## Key findings
 Real numbers from the three seasons (details and caveats in [Results](#results-on-the-three-seasons)):
 - **Margins range from 0.56% to 6.51%.** Average closing margin: Betfair Exchange 0.56%, Pinnacle 2.96%, Bet365 5.51%, Ladbrokes 6.51%.
-- **Most "value" is one sharp book disagreeing.** Of 119 Pinnacle-graded alerts with an exchange price, only 21 still cleared 3% against Betfair Exchange.
+- **Most "value" is one sharp book disagreeing.** Of 119 Pinnacle-graded alerts with an exchange price, only 21 still cleared 3% against Betfair Exchange. Requiring both to agree is the obvious fix: the 3 early ones all beat the close (CLV +4.9%), but 21 bets prove nothing about profit yet (−45%, range −89% … +13%).
 - **Closing-odds alerts lost money:** −43% per unit staked (95% range −70% … −6%). Early alerts beat the close 60% of the time vs 20% for a typical early price, but on only 40 bets.
 - **As a simulated sportsbook** on Bet365's closing prices, expected profit was 5.2% of stakes (close to its 5.51% margin), 4.5% on the real results, and 75 of 1,140 matches breached a 10,000-unit exposure limit.
 - **Arbitrage is rare and thin:** 34 cases, median locked-in return 0.39%.
@@ -30,13 +30,13 @@ Real numbers from the three seasons (details and caveats in [Results](#results-o
 | Question | How it answers it |
 |---|---|
 | How much margin does each bookmaker charge? | Overround per bookmaker and snapshot, ranked with a SQL window function |
-| What is the *fair* probability of each outcome? | Removes the margin ("de-vig") from a sharp reference: **Pinnacle → Betfair Exchange → bookmaker average** |
+| What is the *fair* probability of each outcome? | Removes the margin ("de-vig": proportional, power or Shin) from a sharp reference: **Pinnacle → Betfair Exchange → bookmaker average** |
 | Which prices are out of line? | Flags a bookmaker when `fair_prob × odds − 1` exceeds a threshold (default 3%) |
 | Is there a cross-book arbitrage? | Best price per outcome across bookmakers; flags when `Σ 1/best_odds < 1` |
 | Where did the market move? | Early → closing price change per match/bookmaker/outcome using `LAG()` |
-| Did the alerts hold up? | **Closing line value (CLV)** of early alerts vs a baseline of every early price, a flat-stake backtest on real results with a match-level bootstrap interval, and a second-opinion check against Betfair Exchange |
+| Did the alerts hold up? | **Closing line value (CLV)** of early alerts vs a baseline of every early price, a flat-stake backtest on real results with a match-level bootstrap interval, and a second-opinion check: each alert is marked *confirmed* when Betfair Exchange agrees, and confirmed alerts are backtested separately |
 | If we were the bookmaker, what could one match cost us? | **Simulated** bets at one bookmaker's real closing prices: per-outcome liability, worst case per match, exposure alerts above a limit, and the cost of sharp money on mispriced prices |
-| Are the odds a good forecast? | Brier score, log loss and a reliability chart: proportional vs power de-vig, early vs closing odds |
+| Are the odds a good forecast? | Brier score, log loss and a reliability chart: proportional vs power vs Shin de-vig, early vs closing odds |
 
 There are three ways to look at the results:
 1. **CLI:** commands that print tables (for analysts).
@@ -68,7 +68,8 @@ python cli.py download                  # fetch the season CSVs (skips files alr
 python cli.py ingest                    # validate CSVs and load into DuckDB (idempotent: re-run inserts 0 rows)
 python cli.py margins                   # average / median / min margin per bookmaker, ranked
 python cli.py moves --limit 20 --bookmaker Pinnacle    # largest early -> closing moves
-python cli.py alerts --threshold 0.03 --method power   # -> reports/alerts.csv + DuckDB alerts table
+python cli.py alerts --threshold 0.03 --method power   # -> reports/alerts.csv (incl. 'confirmed') + DuckDB
+python cli.py clv --method shin          # any command with --method takes proportional / power / shin
 python cli.py clv                       # closing line value + backtest of the value alerts
 python cli.py exposure --book Bet365 --limit 10000     # SIMULATED liability per match
 python cli.py devig 3.0 4.5 6.0 8.0 10.0 13.0          # margin + fair prices for ANY market (e.g. a race)
@@ -99,7 +100,7 @@ alerts change when the sharp reference is missing.
 
 ## Project structure
 ```
-odds.py            implied prob, overround, proportional + power de-vig (bisection, no scipy)
+odds.py            implied prob, overround, proportional / power / Shin de-vig (bisection, no scipy)
 load.py            read CSVs, validate (drop missing / odds <= 1, log counts), wide -> long
 db.py              DuckDB schema (matches, odds_snapshots, alerts), idempotent ingest
 queries.sql/.py    named SQL: margins (RANK), moves (LAG), odds joined with matches
@@ -112,7 +113,7 @@ report.py          self-contained HTML report (charts embedded as PNG)
 download.py        polite, idempotent downloader (validates each file before saving)
 app.py             Streamlit dashboard (builds the database on first run)
 cli.py             argparse entry point
-tests/             pytest suite (54 tests, synthetic data, no network)
+tests/             pytest suite (58 tests, synthetic data, no network)
 .github/workflows/ CI: ruff lint + format check and pytest on Python 3.11 and 3.13
 ```
 
@@ -128,25 +129,31 @@ From the actual run (`python cli.py ...`):
   |---|---|---|---|
   | early | proportional | 0.57411 | 0.96520 |
   | early | power | 0.57400 | 0.96463 |
+  | early | Shin | 0.57399 | 0.96471 |
   | closing | proportional | 0.57036 | 0.96044 |
   | closing | power | **0.57016** | **0.95986** |
+  | closing | Shin | 0.57020 | 0.96000 |
   | baseline | always predict base rates | 0.64907 | 1.07225 |
 
-  Closing beats early and power beats proportional, but the gaps are small and **not tested for significance**.
+  Closing beats early, and power and Shin both beat proportional while being practically tied with each other.
+  The gaps are small and **not tested for significance**.
 - **Did the alerts hold up?** (`python cli.py clv`)
 
   | group | n | avg CLV | beat the close | return per unit | 95% range |
   |---|---|---|---|---|---|
   | early value alerts | 40 | −0.6% | 60% | +15.4% | −54% … +99% |
   | closing value alerts | 113 | – | – | −43.0% | −70% … −6% |
+  | exchange-confirmed alerts | 21 | +4.9% | 100% | −44.7% | −89% … +13% |
   | all early prices (baseline) | 20,421 | −6.2% | 20% | −6.4% | −9% … −4% |
 
   Early alerts beat a typical early price by a wide margin (60% vs 20% beat the close) but on average
   not the close itself; their backtest is far too small to separate skill from luck. Closing alerts
   **lost money even allowing for luck**. The second-opinion check explains why: of 119 alerts graded
   against Pinnacle that also had an exchange price, only **21** still cleared 3% against Betfair Exchange,
-  so most alerts are Pinnacle alone disagreeing with the market. Intervals resample whole matches, because
-  one odd price can trigger several alerts at once.
+  so most alerts are Pinnacle alone disagreeing with the market. The *exchange-confirmed* row backtests just
+  those 21 (3 early, 18 closing): the early ones all beat the close, but 21 bets cannot show whether the
+  two-source rule makes money. Intervals resample whole matches, because one odd price can trigger several
+  alerts at once.
 - **Simulated exposure** (`python cli.py exposure`, Bet365 closing prices as "ours", 10,000 recreational
   units per match, +2,000 sharp stake where our price beats fair by > 3%, limit 10,000):
   expected profit 591,402 on 11,422,000 staked (5.2%, close to Bet365's 5.51% margin), 517,448 on the real
@@ -157,6 +164,8 @@ From the actual run (`python cli.py ...`):
 ## Design choices
 - **Power vs proportional de-vig:** proportional removes margin equally in relative terms, but bookmakers load
   more margin onto longshots (the favourite–longshot bias). Power (`p = q^k`) shrinks small probabilities more.
+  **Shin** models a share `z` of insider money and solves for it; on two outcomes it reduces to taking the same
+  absolute amount off each side (a test checks this). On this data power and Shin are practically tied.
 - **Idempotency:** natural primary keys plus `INSERT … ON CONFLICT DO NOTHING`. Alerts use the key
   `(type, match, snapshot, bookmaker, outcome)`, which also deduplicates them.
 - **Betfair Exchange** is used as a fair-price reference but never as an alert target, because its quoted prices
@@ -191,15 +200,17 @@ From the actual run (`python cli.py ...`):
 - **Out-of-order and duplicate events:** upserts keyed on (event, book, market, source timestamp) with a watermark,
   so late ticks never overwrite newer prices.
 - **Stale-feed detection:** track last update per book and market; suppress alerts on prices older than N seconds.
-- **Reference sanity check:** require two sharp sources (e.g. Pinnacle and the exchange) to agree before alerting.
+- **Reference sanity check:** route only alerts that two sharp sources agree on (the `confirmed` flag already
+  computes this) and keep collecting them until the sample is large enough to judge.
 - **Rate limits:** a token bucket per provider, exponential backoff with jitter, caching.
 - **Alert deduplication:** keep the dedupe key, but re-alert only on a material edge change; add cooldowns and routing.
 - **Monitoring the monitor:** feed lag, rows per minute, alert rate and job health, and alarms when the pipeline goes quiet.
 
 ## Testing
 ```bash
-pytest          # 54 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
-                # idempotent ingest, SQL window queries, arbitrage/mispricing detection, CLV and
+pytest          # 58 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
+                # Shin de-vig, idempotent ingest, SQL window queries, arbitrage/mispricing detection,
+                # two-source confirmation, CLV and
                 # bootstrap, liability maths, calibration, downloader, CLI, dashboard (incl.
                 # language switch and first-run database build)
 ruff check . && ruff format --check .

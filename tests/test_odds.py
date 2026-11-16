@@ -1,6 +1,13 @@
 import pytest
 
-from odds import devig_power, devig_proportional, fair_price_table, implied_prob, overround
+from odds import (
+    devig_power,
+    devig_proportional,
+    devig_shin,
+    fair_price_table,
+    implied_prob,
+    overround,
+)
 
 
 def test_worked_example_two_way():
@@ -59,3 +66,17 @@ def test_fair_price_table_rows():
     assert rows[0]["proportional"] == pytest.approx(0.4737, abs=1e-4)
     assert sum(r["power"] for r in rows) == pytest.approx(1.0)
     assert rows[0]["fair_odds"] == pytest.approx(1 / rows[0]["power"])
+
+
+def test_shin_two_way_removes_equal_amounts():
+    # Known property: with two outcomes Shin takes the same absolute amount off each side.
+    # 2.00 / 1.80 -> 0.5 and 0.5556, overround 0.0556 -> 0.5 - 0.0278 and 0.5556 - 0.0278
+    p = devig_shin([2.00, 1.80])
+    assert p == pytest.approx([0.5 - 0.05556 / 2, 1 / 1.8 - 0.05556 / 2], abs=1e-4)
+
+
+def test_shin_sums_to_one_and_trims_longshots_most():
+    race = [3.0, 4.5, 6.0, 8.0, 10.0, 13.0, 17.0, 21.0, 34.0, 51.0]
+    shin, prop = devig_shin(race), devig_proportional(race)
+    assert sum(shin) == pytest.approx(1.0)
+    assert shin[0] > prop[0] and shin[-1] < prop[-1]  # favourite up, longshot down

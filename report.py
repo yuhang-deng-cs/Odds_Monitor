@@ -44,7 +44,7 @@ def gather(
         "calibration": summary,
         "reliability": {k: calibration.reliability_table(preds[k]) for k in ("open/power", "close/power")},
         "performance": clv.performance(odds, alerts, method)[0],
-        "exchange_check": clv.exchange_check(odds, alerts, threshold, method),
+        "exchange_check": clv.exchange_check(alerts),
         "exposure": exposure,
         "exposure_summary": liability.summarise(exposure),
         "exposure_params": params,
@@ -246,6 +246,12 @@ def build_html(data: dict[str, object]) -> str:
 
     early = perf.loc["early value alerts"]
     closing = perf.loc["closing value alerts"]
+    both = perf.loc["exchange-confirmed alerts"]
+    both_note = (
+        t(": too few bets to judge", "：样本太少，无法下结论")
+        if pd.isna(both.roi_ci_low) or both.roi_ci_low < 0 < both.roi_ci_high
+        else ""
+    )
     baseline = perf.loc["all early prices (baseline)"]
     clv_verdict = (
         t("better than a typical early price", "比一般早盘赔率好")
@@ -376,8 +382,8 @@ f"<span class='key'>收盘价值（CLV）</span>是交易中最常用的检验�
 f"Staking 1 unit on every alert, using the real results: early alerts returned {early.roi:+.0%} per unit, but the 95% range ({early.roi_ci_low:+.0%} to {early.roi_ci_high:+.0%}) is far too wide to tell skill from luck. ",
 f"如果每条提醒都下注 1 个单位并按真实赛果结算：早盘提醒每单位回报 {early.roi:+.0%}，但 95% 区间（{early.roi_ci_low:+.0%} 至 {early.roi_ci_high:+.0%}）太宽，无法区分是能力还是运气。")}{close_note}
 {t(
-f"A second opinion explains much of this: of {checked} alerts graded against Pinnacle that also had a Betfair Exchange price, only {confirmed} still cleared the {threshold:.0%} threshold against the exchange. Most alerts come from Pinnacle alone disagreeing with the market, so a production version should require two sharp sources to agree. (Ranges come from resampling whole matches, because one odd price can trigger several alerts at once.)",
-f"用第二个参考源复核可以解释其中大部分原因：在以 Pinnacle 为参考、且同时有 Betfair Exchange 报价的 {checked} 条提醒中，只有 {confirmed} 条相对交易所仍超过 {threshold:.0%} 的阈值。大多数提醒只是 Pinnacle 单独与市场不一致，所以生产版本应要求两个专业参考源一致才发出提醒。（区间按整场比赛重抽样计算，因为一个异常报价可能同时触发多条提醒。）")}</p>
+f"A second opinion explains much of this: of {checked} alerts graded against Pinnacle that also had a Betfair Exchange price, only {confirmed} still cleared the {threshold:.0%} threshold against the exchange. Most alerts come from Pinnacle alone disagreeing with the market, so a production version should require two sharp sources to agree. The <i>exchange-confirmed alerts</i> row tests that rule: {int(both.n)} bets, average CLV {_pct(both.avg_clv)} on the early ones, but a return of {_pct(both.roi)} per unit with a 95% range of {_pct(both.roi_ci_low, '{:+.0%}')} to {_pct(both.roi_ci_high, '{:+.0%}')}{both_note}. (Ranges come from resampling whole matches, because one odd price can trigger several alerts at once.)",
+f"用第二个参考源复核可以解释其中大部分原因：在以 Pinnacle 为参考、且同时有 Betfair Exchange 报价的 {checked} 条提醒中，只有 {confirmed} 条相对交易所仍超过 {threshold:.0%} 的阈值。大多数提醒只是 Pinnacle 单独与市场不一致，所以生产版本应要求两个专业参考源一致才发出提醒。表中“交易所确认的提醒”一行检验了这条规则：共 {int(both.n)} 注，其中早盘部分的平均 CLV 为 {_pct(both.avg_clv)}，但每单位回报 {_pct(both.roi)}，95% 区间 {_pct(both.roi_ci_low, '{:+.0%}')} 至 {_pct(both.roi_ci_high, '{:+.0%}')}{both_note}。（区间按整场比赛重抽样计算，因为一个异常报价可能同时触发多条提醒。）")}</p>
 {_tables(friendly_performance, data["performance"])}
 
 <h2>{t("Simulated: our exposure as a sportsbook", "模拟：作为博彩公司的风险敞口")}</h2>

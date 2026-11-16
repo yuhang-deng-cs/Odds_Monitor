@@ -35,6 +35,7 @@ COLUMNS_ZH = {
 GROUPS_ZH = {
     "early value alerts": "早盘价值提醒",
     "closing value alerts": "收盘价值提醒",
+    "exchange-confirmed alerts": "交易所确认的提醒",
     "all early prices (baseline)": "全部早盘赔率（基准）",
 }
 

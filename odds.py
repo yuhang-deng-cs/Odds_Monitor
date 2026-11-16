@@ -69,15 +69,52 @@ def devig_power(odds: Sequence[float], tol: float = 1e-12, max_iter: int = 200) 
     return [p / total for p in probs]
 
 
+def devig_shin(odds: Sequence[float], tol: float = 1e-12, max_iter: int = 200) -> list[float]:
+    """Remove margin with Shin's (1993) model, the standard method in betting research.
+
+    Shin assumes a share z of the money comes from insiders who know the winner, so the book
+    protects itself by padding every price, and longshots most. Given raw implied
+    probabilities q_i with sum S, the fair probabilities are
+
+        p_i(z) = (sqrt(z**2 + 4 * (1 - z) * q_i**2 / S) - z) / (2 * (1 - z))
+
+    and z (0 <= z < 1) is chosen so that sum(p_i) = 1. At z = 0 the sum is sqrt(S) > 1 and it
+    falls as z grows, so bisection on [0, 1) finds it. z itself is an estimate of how much
+    insider money the book is pricing in. For two outcomes Shin equals removing the same
+    absolute amount from each probability.
+    """
+    raw = [implied_prob(o) for o in odds]
+    if len(raw) < 2:
+        raise ValueError("need at least two outcomes")
+    total = sum(raw)
+    if total <= 1.0:  # no margin to remove (or an arbitrage): the model does not apply
+        return [q / total for q in raw]
+
+    def probs(z: float) -> list[float]:
+        return [((z * z + 4 * (1 - z) * q * q / total) ** 0.5 - z) / (2 * (1 - z)) for q in raw]
+
+    lo, hi = 0.0, 1.0 - 1e-9
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2.0
+        if sum(probs(mid)) > 1.0:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < tol:
+            break
+    p = probs((lo + hi) / 2.0)
+    return [x / sum(p) for x in p]  # renormalise away the last bit of bisection error
+
+
 def fair_price_table(odds: Sequence[float]) -> list[dict[str, float]]:
     """One row per outcome for ANY market size (3-way football, a 12-runner race, ...).
 
-    Columns: odds, implied (raw 1/odds, margin included), proportional and power fair
+    Columns: odds, implied (raw 1/odds, margin included), proportional, power and Shin fair
     probabilities, and the power fair odds (1 / fair probability).
     """
     implied = [implied_prob(o) for o in odds]
-    prop, power = devig_proportional(odds), devig_power(odds)
+    prop, power, shin = devig_proportional(odds), devig_power(odds), devig_shin(odds)
     return [
-        {"odds": o, "implied": q, "proportional": pp, "power": pw, "fair_odds": 1 / pw}
-        for o, q, pp, pw in zip(odds, implied, prop, power, strict=True)
+        {"odds": o, "implied": q, "proportional": pp, "power": pw, "shin": sh, "fair_odds": 1 / pw}
+        for o, q, pp, pw, sh in zip(odds, implied, prop, power, shin, strict=True)
     ]

@@ -69,3 +69,15 @@ def test_detect_end_to_end_with_dedupe():
         ("arbitrage", "H:Pinnacle@2.0|D:Pinnacle@3.5|A:BadBook@5.0", "ALL"),
         ("value", "BadBook", "A"),
     ]
+
+
+def test_second_sharp_source_confirms_or_rejects():
+    base = {"Pinnacle": (2.00, 3.50, 4.00), "BadBook": (1.95, 3.40, 5.00)}
+    # Exchange agrees with Pinnacle -> the 5.00 away price is confirmed as too generous
+    agree = value_alerts({**base, "Betfair Exchange": (2.02, 3.55, 4.05)})
+    assert agree[0]["confirmed"] is True
+    # Exchange rates the away team lower (fair ~20%) -> 5.00 is only fair there, not value
+    disagree = value_alerts({**base, "Betfair Exchange": (1.90, 3.40, 4.80)})
+    assert disagree[0]["confirmed"] is False
+    # No exchange price: nothing to confirm with
+    assert value_alerts(base)[0]["confirmed"] is None

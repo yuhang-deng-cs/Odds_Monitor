@@ -67,7 +67,7 @@ def cmd_clv(args: argparse.Namespace) -> None:
     odds = queries.odds_with_matches(db.connect(args.db))
     alerts = detect(odds, threshold=args.threshold, method=args.method)
     summary, _ = clv.performance(odds, alerts, args.method)
-    checked, confirmed = clv.exchange_check(odds, alerts, args.threshold, args.method)
+    checked, confirmed = clv.exchange_check(alerts)
     print("Closing line value and flat 1-unit backtest of value alerts (real results)")
     print("roi range: 95% bootstrap, resampling whole matches")
     print(summary.to_string(index=False, float_format=lambda x: f"{x:+.4f}"))
