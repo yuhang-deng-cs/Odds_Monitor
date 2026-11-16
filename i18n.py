@@ -18,11 +18,13 @@ VALUES = {
 
 COLUMNS_ZH = {
     "Date": "日期", "Match": "比赛", "Bookmaker": "博彩公司", "Outcome": "结果",
-    "Early odds": "早盘赔率", "Closing odds": "收盘赔率", "Change in chance": "概率变化",
+    "Early odds": "早盘赔率", "Closing odds": "收盘赔率",
+    "Change in chance (pts)": "概率变化（百分点）",
     "Final result": "实际赛果", "Odds taken": "赔率时点", "Odds offered": "提供赔率",
     "Fair chance": "公平概率", "Expected edge": "预期优势", "Compared with": "参考来源",
     "Best prices used": "所用最佳赔率", "Locked-in return": "锁定收益",
-    "Group": "分组", "Bets": "注数", "Average CLV": "平均 CLV", "Beat the close": "跑赢收盘比例",
+    "Group": "分组", "Bets": "注数", "Bets with CLV": "有 CLV 的注数",
+    "Average CLV": "平均 CLV", "Beat the close": "跑赢收盘比例",
     "Return per unit": "每单位回报", "95% range": "95% 区间",
     "Metric": "指标", "Value": "数值", "Our price (H/D/A)": "我方赔率（主/平/客）",
     "Stakes H/D/A": "投注额 主/平/客", "Sharp bets on": "职业玩家下注", "Worst case": "最坏情况",

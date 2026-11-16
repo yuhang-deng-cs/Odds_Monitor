@@ -31,6 +31,7 @@ from report import (
     friendly_exposure_summary,
     friendly_moves,
     friendly_performance,
+    number_formats,
 )
 
 DB_PATH = Path(os.environ.get("ODDS_DB", "data/odds.duckdb"))
@@ -40,7 +41,7 @@ RACE_EXAMPLE = "3.0 4.5 6.0 8.0 10.0 13.0 17.0 21.0 34.0 51.0"  # illustrative, 
 # UI text: key -> (English, Chinese)
 TEXT = {
     "replay": ("**Historical replay.** Past Premier League odds from football-data.co.uk. A prototype: nothing here is live and no bets are placed.",
-               "**历史回放。**数据为 football-data.co.uk 的英超历史赔率。这是一个原型：没有实时数据，也没有真实下注。"),
+               "**历史回放**。数据为 football-data.co.uk 的英超历史赔率。这是一个原型：没有实时数据，也没有真实下注。"),
     "no_db": ("Could not build the database at {path}: {err}. Run `python cli.py download` and `python cli.py ingest`.",
               "无法在 {path} 建立数据库：{err}。请运行 `python cli.py download` 和 `python cli.py ingest`。"),
     "first_run": ("First run: downloading three Premier League seasons and building the database (about 10 seconds)…",
@@ -72,10 +73,10 @@ TEXT = {
     "c_shin": ("Fair: Shin", "公平概率：Shin 法"),
     "c_fair_odds": ("Fair odds (power)", "公平赔率（power）"),
     "perf_what": ("**What is CLV?** Example: a bookmaker offered 4.40 early; at kick-off the sharp market rated the outcome a 25% chance (fair odds 4.00). CLV = 4.40 × 0.25 − 1 = **+10%**: the early price was too generous and the market corrected it. Positive CLV over many bets is the standard sign of a good bettor, and for a sportsbook, of a price that sharp customers will pick off.",
-                  "**什么是 CLV？**举例：某博彩公司早盘开出 4.40；开赛时专业市场认为该结果有 25% 的概率（公平赔率 4.00）。CLV = 4.40 × 0.25 − 1 = **+10%**：说明早盘价格给得太高，后来被市场修正了。长期正的 CLV 是判断职业玩家水平的标准指标；对博彩公司来说，则意味着这个价格会被职业玩家利用。"),
+                  "**什么是 CLV**？举例：某博彩公司早盘开出 4.40；开赛时专业市场认为该结果有 25% 的概率（公平赔率 4.00）。CLV = 4.40 × 0.25 − 1 = **+10%**：说明早盘价格给得太高，后来被市场修正了。长期正的 CLV 是判断职业玩家水平的标准指标；对博彩公司来说，则意味着这个价格会被职业玩家利用。"),
     "margins_h": ("Which bookmakers charge the most?", "哪家博彩公司抽水最多？"),
     "margins_p": ("Every bookmaker builds a profit margin into its odds. **Lower margin = better prices for customers.** Betfair Exchange is a betting exchange (prices before commission).",
-                  "每家博彩公司都会在赔率中加入利润率。**利润率越低，对玩家越有利。**Betfair Exchange 是投注交易所（赔率未扣佣金）。"),
+                  "每家博彩公司都会在赔率中加入利润率。**利润率越低，对玩家越有利**。Betfair Exchange 是投注交易所（赔率未扣佣金）。"),
     "odds": ("Odds", "赔率"), "avg_margin": ("Average margin (%)", "平均利润率（%）"),
     "moves_h": ("Where did the odds move most before kick-off?", "开赛前哪些赔率变动最大？"),
     "moves_p": ("Change in each outcome's chance (margin removed) between the early and closing odds. Only two snapshots per match, so this is a rough view, not minute-by-minute data.",
@@ -90,13 +91,13 @@ TEXT = {
     "n_alerts": ("Number of value alerts", "价值提醒数量"), "arbs": ("Arbitrages", "套利"),
     "download": ("Download all alerts (CSV)", "下载全部提醒（CSV）"),
     "perf_h": ("Did the alerts hold up?", "这些提醒经得起检验吗？"),
-    "perf_p": ("**Closing line value (CLV)** asks whether an early price was still generous at the close, when the market knew most: CLV = early odds × closing fair chance − 1. The baseline is every early price; alerts are only useful if they clearly beat it. *Return per unit* stakes 1 unit on every alert using the real results; the 95% range comes from resampling whole matches.",
-               "**收盘价值（CLV）**检验早盘赔率到收盘（市场信息最充分）时是否仍然偏高：CLV = 早盘赔率 × 收盘公平概率 − 1。基准是全部早盘赔率；提醒只有明显优于基准才有用。*每单位回报*是按真实赛果、每条提醒下注 1 单位的结果；95% 区间按整场比赛重抽样得到。"),
+    "perf_p": ("**Closing line value (CLV)** asks whether an early price was still generous at the close, when the market knew most: CLV = early odds × closing fair chance − 1. The baseline is every early price; alerts are only useful if they clearly beat it. *Return per unit* stakes 1 unit on every alert using the real results; the 95% range comes from resampling whole matches. CLV needs a later price to beat, so it exists only for early bets: *Bets with CLV* shows how many each CLV figure is based on.",
+               "**收盘价值（CLV）** 检验早盘赔率到收盘（市场信息最充分）时是否仍然偏高：CLV = 早盘赔率 × 收盘公平概率 − 1。基准是全部早盘赔率；提醒只有明显优于基准才有用。*每单位回报*是按真实赛果、每条提醒下注 1 单位的结果；95% 区间按整场比赛重抽样得到。CLV 需要之后的价格来比较，所以只有早盘注才有：*有 CLV 的注数*显示每个 CLV 数字基于多少注。"),
     "second": ("Second opinion: of **{c}** alerts graded against Pinnacle that also had a Betfair Exchange price, only **{k}** still cleared the threshold against the exchange. The *exchange-confirmed alerts* row backtests just those: the rule \"two sharp sources must agree\".",
                "第二参考源复核：在以 Pinnacle 为参考、且有 Betfair Exchange 报价的 **{c}** 条提醒中，只有 **{k}** 条相对交易所仍超过阈值。表中“交易所确认的提醒”一行只回测这些提醒，即“两个专业参考源必须一致”的规则。"),
     "exp_h": ("If we were the bookmaker: how much could one match cost us?", "如果我们是庄家：一场比赛最多会亏多少？"),
     "exp_sim": ("**Simulated bets.** Prices and results are real; the bets are made up because the data has no stake information.",
-                "**模拟投注。**赔率和赛果是真实的；投注是模拟的，因为数据中没有投注金额。"),
+                "**模拟投注**。赔率和赛果是真实的；投注是模拟的，因为数据中没有投注金额。"),
     "exp_p": ("The chosen bookmaker's closing prices play *our* prices. Recreational customers stake a fixed amount per match, split roughly by the fair chances with random noise; a sharp customer adds a stake wherever our price beats fair by more than the alert threshold. **Worst case** is the book's result if the most expensive outcome wins; an exposure alert fires when it is beyond the limit.",
               "用所选博彩公司的收盘赔率扮演*我们的*赔率。普通玩家每场投注固定金额，大致按公平概率分配并加入随机波动；当我们的赔率比公平赔率高出提醒阈值时，职业玩家会额外下注。**最坏情况**是赔付最多的结果发生时庄家的盈亏；超过限额即触发敞口警报。"),
     "our_book": ("Our prices (bookmaker)", "我方赔率（博彩公司）"),
@@ -223,6 +224,16 @@ def tx(key: str, **fmt: object) -> str:
     return text.format(**fmt) if fmt else text
 
 
+def table(df: pd.DataFrame) -> None:
+    """Show a friendly table: numbers stay numeric (so sorting works) with a display format."""
+    config = {
+        name: st.column_config.NumberColumn(format=fmt)
+        for name, fmt in number_formats(lang).items()
+        if name in df.columns
+    }
+    st.dataframe(df, hide_index=True, width="stretch", column_config=config)
+
+
 def local(df: pd.DataFrame) -> pd.DataFrame:
     """Translate raw column names (identity in English)."""
     return df.rename(columns=i18n.columns(list(df.columns), lang))
@@ -312,7 +323,7 @@ with tab_mv:
     st.markdown(tx("moves_p"))
     n = st.slider(tx("how_many"), 5, 100, 20, key="n_moves")
     top = moves.reindex(moves["prob_move_pp"].abs().sort_values(ascending=False).index).head(n)
-    st.dataframe(friendly_moves(top, lang), hide_index=True, width="stretch")
+    table(friendly_moves(top, lang))
 
 with tab_a:
     st.subheader(tx("alerts_h"))
@@ -327,9 +338,9 @@ with tab_a:
                       ["bookmaker", "count"]).encode(y=alt.Y("bookmaker:N", sort="-x", title=None)),
             width="stretch",
         )  # fmt: skip
-        st.dataframe(friendly_alerts(alerts, "value", lang), hide_index=True, width="stretch")
+        table(friendly_alerts(alerts, "value", lang))
     st.markdown(f"**{tx('arbs')} ({len(arbs)})**")
-    st.dataframe(friendly_alerts(alerts, "arbitrage", lang), hide_index=True, width="stretch")
+    table(friendly_alerts(alerts, "arbitrage", lang))
     st.download_button(
         tx("download"), alerts.to_csv(index=False), "alerts.csv", "text/csv",
         icon=":material/download:",
@@ -340,7 +351,7 @@ with tab_p:
     st.markdown(tx("perf_what"))
     st.markdown(tx("perf_p"))
     perf, (checked, confirmed) = run_performance(odds, alerts, threshold, method)
-    st.dataframe(friendly_performance(perf, lang), hide_index=True, width="stretch")
+    table(friendly_performance(perf, lang))
     st.markdown(tx("second", c=checked, k=confirmed))
 
 with tab_x:
@@ -362,7 +373,7 @@ with tab_x:
         st.write(tx("empty"))
     else:
         summary = liability.summarise(sim)
-        st.dataframe(friendly_exposure_summary(summary, lang), hide_index=True, width="stretch")
+        table(friendly_exposure_summary(summary, lang))
         hist = (
             alt.Chart(sim)
             .mark_bar(color=BLUE)
@@ -377,11 +388,7 @@ with tab_x:
         ).encode(x="x:Q")  # fmt: skip
         st.altair_chart(hist + rule, width="stretch")
         st.markdown(f"**{tx('worst10')}**")
-        st.dataframe(
-            friendly_exposure(sim.nsmallest(10, "worst_case"), lang),
-            hide_index=True,
-            width="stretch",
-        )
+        table(friendly_exposure(sim.nsmallest(10, "worst_case"), lang))
 
 with tab_c:
     st.subheader(tx("calib_h"))

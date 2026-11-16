@@ -100,8 +100,45 @@ def _png(fig: plt.Figure) -> str:
 # ---------- friendly tables (column names and categories follow `lang`) ----------
 
 
+# Numeric columns stay numbers so the dashboard sorts them correctly; only the display is
+# formatted. Each entry: (str.format pattern for the HTML report, printf pattern for
+# st.column_config). Percent columns hold percentage points (4.9 means 4.9%).
+_ODDS = ("{:.2f}", "%.2f")
+_COUNT = ("{:,.0f}", "localized")
+NUMBER_FORMATS = {
+    "Early odds": _ODDS,
+    "Closing odds": _ODDS,
+    "Odds offered": _ODDS,
+    "Change in chance (pts)": ("{:+.1f}", "%+.1f"),
+    "Fair chance": ("{:.1f}%", "%.1f%%"),
+    "Expected edge": ("{:.1f}%", "%.1f%%"),
+    "Locked-in return": ("{:.2f}%", "%.2f%%"),
+    "Bets": _COUNT,
+    "Bets with CLV": _COUNT,
+    "Average CLV": ("{:+.1f}%", "%+.1f%%"),
+    "Beat the close": ("{:.0f}%", "%.0f%%"),
+    "Return per unit": ("{:+.1f}%", "%+.1f%%"),
+    "Worst case": _COUNT,
+    "Actual P&L": ("{:+,.0f}", "localized"),
+}
+
+
+def number_formats(lang: str = "en") -> dict[str, str]:
+    """Displayed column name -> printf pattern, for st.column_config.NumberColumn."""
+    return {i18n.columns([c], lang)[c]: f for c, (_, f) in NUMBER_FORMATS.items()}
+
+
 def _localise(df: pd.DataFrame, lang: str) -> pd.DataFrame:
     return df.rename(columns=i18n.columns(list(df.columns), lang))
+
+
+def _formatted(df: pd.DataFrame) -> pd.DataFrame:
+    """Render numeric columns as text for the static HTML report (missing values show a dash)."""
+    out = df.copy()
+    for col, (pattern, _) in NUMBER_FORMATS.items():
+        for name in {col, i18n.COLUMNS_ZH.get(col, col)} & set(out.columns):
+            out[name] = out[name].map(lambda x, p=pattern: "–" if pd.isna(x) else p.format(x))
+    return out
 
 
 def _date(s: pd.Series) -> pd.Series:
@@ -109,15 +146,14 @@ def _date(s: pd.Series) -> pd.Series:
 
 
 def friendly_moves(moves: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
-    pts = "{:+.1f} pts" if lang == "en" else "{:+.1f} 个百分点"
     return _localise(pd.DataFrame({
         "Date": _date(moves["match_date"]),
         "Match": moves["home"] + " v " + moves["away"],
         "Bookmaker": moves["bookmaker"],
         "Outcome": moves["outcome"].map(lambda o: i18n.value(o, lang)),
-        "Early odds": moves["open_odds"].map("{:.2f}".format),
-        "Closing odds": moves["close_odds"].map("{:.2f}".format),
-        "Change in chance": moves["prob_move_pp"].map(pts.format),
+        "Early odds": moves["open_odds"],
+        "Closing odds": moves["close_odds"],
+        "Change in chance (pts)": moves["prob_move_pp"],
         "Final result": moves["result"].map(lambda o: i18n.value(o, lang)),
     }), lang)  # fmt: skip
 
@@ -132,13 +168,13 @@ def friendly_alerts(alerts: pd.DataFrame, alert_type: str, lang: str = "en") -> 
     if alert_type == "value":
         out["Bookmaker"] = a["bookmaker"]
         out["Outcome"] = a["outcome"].map(lambda o: i18n.value(o, lang))
-        out["Odds offered"] = a["odds"].map("{:.2f}".format)
-        out["Fair chance"] = a["fair_prob"].map("{:.1%}".format)
-        out["Expected edge"] = a["edge"].map("{:.1%}".format)
+        out["Odds offered"] = a["odds"]
+        out["Fair chance"] = a["fair_prob"] * 100
+        out["Expected edge"] = a["edge"] * 100
         out["Compared with"] = a["reference"].str.replace("_", " ")
     else:
         out["Best prices used"] = a["bookmaker"].str.replace("|", ", ").str.replace(":", " ")
-        out["Locked-in return"] = a["edge"].map("{:.2%}".format)
+        out["Locked-in return"] = a["edge"] * 100
     return _localise(out, lang)
 
 
@@ -149,12 +185,14 @@ def _pct(x: float, fmt: str = "{:+.1%}") -> str:
 def friendly_performance(perf: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
     return _localise(pd.DataFrame({
         "Group": perf["group"].map(lambda g: i18n.GROUPS_ZH[g] if lang == "zh" else g),
-        "Bets": perf["n"].map("{:,}".format),
-        "Average CLV": perf["avg_clv"].map(_pct),
-        "Beat the close": perf["beat_close_pct"].map(lambda x: _pct(x, "{:.0%}")),
-        "Return per unit": perf["roi"].map(_pct),
+        "Bets": perf["n"],
+        "Return per unit": perf["roi"] * 100,
         "95% range": [f"{_pct(lo, '{:+.0%}')} … {_pct(hi, '{:+.0%}')}"
                       for lo, hi in zip(perf["roi_ci_low"], perf["roi_ci_high"], strict=True)],
+        # CLV needs a later price to beat, so only early bets have it: show how many did.
+        "Bets with CLV": perf["n_clv"],
+        "Average CLV": perf["avg_clv"] * 100,
+        "Beat the close": perf["beat_close_pct"] * 100,
     }), lang)  # fmt: skip
 
 
@@ -179,14 +217,15 @@ def friendly_exposure(sim: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
         "Match": sim["home"] + " v " + sim["away"],
         "Stakes H/D/A": [f"{h:,.0f} / {d:,.0f} / {a:,.0f}" for h, d, a in stakes],
         "Sharp bets on": sim["sharp_on"].map(outcomes),
-        "Worst case": sim["worst_case"].map("{:,.0f}".format),
+        "Worst case": sim["worst_case"].round(),
         "Final result": sim["result"].map(lambda o: i18n.value(o, lang)),
-        "Actual P&L": sim["actual_pnl"].map("{:+,.0f}".format),
+        "Actual P&L": sim["actual_pnl"].round(),
     }), lang)  # fmt: skip
 
 
 def _table(df: pd.DataFrame) -> str:
-    return '<div class="scroll">' + df.to_html(index=False, border=0, escape=True) + "</div>"
+    html = _formatted(df).to_html(index=False, border=0, escape=True)
+    return '<div class="scroll">' + html + "</div>"
 
 
 def _tables(make, *args) -> str:

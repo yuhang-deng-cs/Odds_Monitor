@@ -113,7 +113,7 @@ report.py          self-contained HTML report (charts embedded as PNG)
 download.py        polite, idempotent downloader (validates each file before saving)
 app.py             Streamlit dashboard (builds the database on first run)
 cli.py             argparse entry point
-tests/             pytest suite (58 tests, synthetic data, no network)
+tests/             pytest suite (61 tests, synthetic data, no network)
 .github/workflows/ CI: ruff lint + format check and pytest on Python 3.11 and 3.13
 ```
 
@@ -139,12 +139,12 @@ From the actual run (`python cli.py ...`):
   The gaps are small and **not tested for significance**.
 - **Did the alerts hold up?** (`python cli.py clv`)
 
-  | group | n | avg CLV | beat the close | return per unit | 95% range |
-  |---|---|---|---|---|---|
-  | early value alerts | 40 | −0.6% | 60% | +15.4% | −54% … +99% |
-  | closing value alerts | 113 | – | – | −43.0% | −70% … −6% |
-  | exchange-confirmed alerts | 21 | +4.9% | 100% | −44.7% | −89% … +13% |
-  | all early prices (baseline) | 20,421 | −6.2% | 20% | −6.4% | −9% … −4% |
+  | group | n | bets with CLV | avg CLV | beat the close | return per unit | 95% range |
+  |---|---|---|---|---|---|---|
+  | early value alerts | 40 | 40 | −0.6% | 60% | +15.4% | −54% … +99% |
+  | closing value alerts | 113 | 0 | – | – | −43.0% | −70% … −6% |
+  | exchange-confirmed alerts | 21 | 3 | +4.9% | 100% | −44.7% | −89% … +13% |
+  | all early prices (baseline) | 20,421 | 20,421 | −6.2% | 20% | −6.4% | −9% … −4% |
 
   Early alerts beat a typical early price by a wide margin (60% vs 20% beat the close) but on average
   not the close itself; their backtest is far too small to separate skill from luck. Closing alerts
@@ -208,7 +208,7 @@ From the actual run (`python cli.py ...`):
 
 ## Testing
 ```bash
-pytest          # 58 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
+pytest          # 61 tests: worked examples, de-vig sums (incl. a 10-runner race), loader validation,
                 # Shin de-vig, idempotent ingest, SQL window queries, arbitrage/mispricing detection,
                 # two-source confirmation, CLV and
                 # bootstrap, liability maths, calibration, downloader, CLI, dashboard (incl.
